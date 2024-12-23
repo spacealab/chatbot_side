@@ -6,6 +6,12 @@ import argparse
 import os
 import traceback
 
+from pymongo import MongoClient
+
+client = MongoClient("mongodb://localhost:27017/")
+db = client["chatbot_db"]
+collection = db["questions_answers"]
+
 
 csv_file_path = "questionPair.csv"
 
@@ -37,46 +43,6 @@ def save_error_logs(error_message, traceback_info):
         print(f"Logs saved successfully to {log_filename} and {traceback_filename}.")
     except Exception as log_error:
         print(f"Failed to save logs: {log_error}")
-
-
-# Define questions and answers
-qa_pairs = {}
-try:
-    validate_csv_path(csv_file_path)  # بررسی مسیر و نوع فایل
-    with open(csv_file_path, mode='r', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-
-        # بررسی وجود ستون‌های ضروری
-        if not reader.fieldnames or 'Question' not in reader.fieldnames:
-            raise ValueError(
-                "The CSV file format is unsupported or corrupted.")
-
-        # جایگزینی لیست داخلی
-        qa_pairs.clear()
-        for row in reader:
-            question = row['Question'].strip().lower()
-            answers = [row[col].strip() for col in ['Answer1', 'Answer2', 'Answer3', 'Answer4']if col in row and row[col].strip()]
-            if len(answers) > 4:
-                raise ValueError(
-                    f"Question '{question}' has more than 4 answers.")
-            qa_pairs[question] = answers
-
-        # بررسی تعداد سوالات
-        if len(qa_pairs) < 10:
-            raise ValueError(
-                "The CSV file must contain at least 10 questions.")
-
-    print(f"Successfully imported {len(qa_pairs)} questions and answers.")
-except FileNotFoundError:
-    print("Error: The specified file does not exist.")
-except PermissionError:
-    print("Error: Insufficient permissions to read the file.")
-except ValueError as ve:
-    print(f"Error: {ve}")
-except Exception as e:
-    print("An unexpected error occurred. Please check the log files for details.")
-    save_error_logs(str(e), traceback.format_exc())
-
 
 # Define keyword-related questions
 keyword_questions = {
@@ -162,16 +128,23 @@ def chatbot_response(user_input):
     original_question = find_original_question(user_input)
     if original_question:
         user_input = original_question
-    if user_input in qa_pairs:
-        if isinstance(qa_pairs[user_input], list):
-            return random.choice(qa_pairs[user_input])
+
+    user_input_lower = user_input.strip().lower()
+
+    # در دیتابیس جستجو کنید
+    doc = collection.find_one({"question": user_input_lower})
+
+    if doc:
+        # اگر سندی پیدا شد، یکی از پاسخ‌ها را برمی‌گردانیم
+        if doc["answers"]:
+            return random.choice(doc["answers"])
         else:
-            return qa_pairs[user_input]
-    elif "hello" in user_input.lower():
+            return "I'm sorry, I don't have an answer for that."
+    elif "hello" in user_input_lower:
         return "Hello! How can I assist you today?"
-    elif "how are you?" in user_input.lower():
+    elif "how are you?" in user_input_lower:
         return "I'm here to help you! How can I assist you?"
-    elif "bye" in user_input.lower():
+    elif "bye" in user_input_lower:
         return "Goodbye! Have a great day!"
     else:
         return "I'm sorry, I don't know the answer to that."
@@ -199,76 +172,96 @@ def handle_compound_question(user_input):
         responses.append(f"Q: {question} A: {question_response}")
     return "\n".join(responses)
 
+def export_mongo_to_csv(csv_file_path):
+    import csv
+    
+    # تمام اسناد (Documents) را از دیتابیس بخوانید
+    docs = collection.find()  # collection: کالکشن questions_answers در MongoDB
 
-def save_to_csv(csv_file_path, qa_pairs):
+    # ابتدا مشخص کنیم بیشترین تعداد پاسخ در همه اسناد چند تاست
+    max_answers = 0
+    all_docs = list(docs)  # تبدیل Cursor به لیست
+    for d in all_docs:
+        if "answers" in d and len(d["answers"]) > max_answers:
+            max_answers = len(d["answers"])
+    
+    header = ["Question"] + [f"Answer{i+1}" for i in range(max_answers)]
+
     with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
-
-        # Determine the maximum number of answers
-        max_answers = max(len(answers) for answers in qa_pairs.values())
-        header = ["Question"] + [f"Answer{i+1}" for i in range(max_answers)]
-
-        # Write header
         writer.writerow(header)
-
-        # Write questions and answers
-        for question, answers in qa_pairs.items():
-            # Ensure all answer columns are filled
+        
+        for d in all_docs:
+            question = d["question"]
+            answers = d["answers"] if "answers" in d else []
+            # اگر تعداد پاسخ کمتر از max_answers بود، خالی پر کن
             while len(answers) < max_answers:
                 answers.append("")
-            writer.writerow([question] + answers)
+            row = [question] + answers
+            writer.writerow(row)
 
-    print(f"Data successfully saved to {csv_file_path}")
+    print(f"Data successfully exported from MongoDB to {csv_file_path}.")
 
 
-def add_question(csv_file_path, question, answers):
-    if question in qa_pairs:
-        print(f"The question '{question}' already exists.")
+def add_question(question, answers_list):
+    question_lower = question.strip().lower()
+    existing_doc = collection.find_one({"question": question_lower})
+    if existing_doc:
+        print(f"The question '{question}' already exists in database.")
         return
+    
+    doc = {
+        "question": question_lower,
+        "answers": answers_list
+    }
+    collection.insert_one(doc)
+    print(f"Added question '{question}' with answers {answers_list} to MongoDB.")
 
-    # اضافه کردن سوال جدید
-    qa_pairs[question] = answers
-    print(f"Added question: '{question}' with answers: {answers}")
-    save_to_csv(csv_file_path, qa_pairs)
-
-
-def remove_question(csv_file_path, question):
-    if question in qa_pairs:
-        del qa_pairs[question]
-        print(f"Removed question: '{question}'")
-        save_to_csv(csv_file_path, qa_pairs)
+def remove_question(question):
+    question_lower = question.strip().lower()
+    result = collection.delete_one({"question": question_lower})
+    if result.deleted_count > 0:
+        print(f"Removed question: '{question}' from MongoDB.")
     else:
-        print(f"The question '{question}' does not exist.")
+        print(f"The question '{question}' does not exist in database.")
 
-
-def add_answer(csv_file_path, question, answer):
-    question = question.lower().strip()
-    if question in qa_pairs:
-        if answer not in qa_pairs[question]:
-            qa_pairs[question].append(answer)
-            print(f"Added answer '{answer}' to question: '{question}'")
+def add_answer(question, new_answer):
+    question_lower = question.strip().lower()
+    doc = collection.find_one({"question": question_lower})
+    if not doc:
+        # اگر سوال وجود ندارد، بسازیم
+        doc = {
+            "question": question_lower,
+            "answers": [new_answer]
+        }
+        collection.insert_one(doc)
+        print(f"Question '{question}' did not exist. Created new entry with answer '{new_answer}'.")
+    else:
+        if new_answer in doc["answers"]:
+            print(f"The answer '{new_answer}' already exists for question '{question}'.")
         else:
-            print(f"The answer '{answer}' already exists for question: '{question}'")
+            doc["answers"].append(new_answer)
+            collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"answers": doc["answers"]}}
+            )
+            print(f"Added new answer '{new_answer}' to question '{question}'.")
+
+def remove_answer(question, answer):
+    question_lower = question.strip().lower()
+    doc = collection.find_one({"question": question_lower})
+    if not doc:
+        print(f"The question '{question}' does not exist in database.")
     else:
-        # If the question doesn't exist, create it with the new answer
-        qa_pairs[question] = [answer]
-        print(f"Added new question '{question}' with answer '{answer}'")
-    save_to_csv(csv_file_path, qa_pairs)
-
-
-
-def remove_answer(csv_file_path, question, answer):
-    question = question.lower().strip()
-    if question in qa_pairs:
-        if answer in qa_pairs[question]:
-            qa_pairs[question].remove(answer)
-            print(f"Removed answer '{answer}' from question: '{question}'")
+        if answer in doc["answers"]:
+            doc["answers"].remove(answer)
+            collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"answers": doc["answers"]}}
+            )
+            print(f"Removed answer '{answer}' from question '{question}'.")
         else:
-            print(f"The answer '{answer}' does not exist for question: '{question}' ")
-    else:
-        print(f"The question '{question}' does not exist.")
-    save_to_csv(csv_file_path, qa_pairs)
-
+            print(f"The answer '{answer}' does not exist for question '{question}'.")
 
 def read_logs():
     log_filename = "log.txt"
@@ -291,6 +284,60 @@ def read_logs():
         traceback_info = traceback.format_exc()
         print(f"Error: {error_message}")
         save_error_logs(error_message, traceback_info)
+
+def import_csv_to_mongo(csv_path):
+    with open(csv_path, mode='r', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+
+        for row in reader:
+            # 1) گرفتن فیلدها از فایل CSV
+            question_text = row['question'].strip()  # نام ستون باید در CSV lowercase یا همانطور که هست باشد
+            answers_str = row.get('answers', '').strip()  # رشته پاسخ‌ها
+            tags_str = row.get('tags', '').strip()
+            created_at_value = row.get('created_at', '').strip()
+
+            # 2) تبدیل answers به لیست
+            answers_list = []
+            if answers_str:
+                # فرض می‌کنیم با ; از هم جدا شده
+                answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
+
+            # 3) تبدیل tags به لیست
+            tags_list = []
+            if tags_str:
+                tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
+
+            # 4) بررسی اینکه آیا question در دیتابیس موجود است (جلوگیری از تکراری بودن)
+            existing_doc = collection.find_one({"question": question_text.lower()})
+
+            # 5) محاسبه created_at
+            if not created_at_value:
+                # اگر خالی بود، زمان فعلی را قرار دهید
+                created_at_value = datetime.datetime.now()
+            else:
+                # تلاش برای تبدیل رشته به datetime
+                try:
+                    created_at_value = datetime.datetime.strptime(created_at_value, "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    # اگر فرمت درست نبود، می‌توانید warning بدهید یا به عنوان استرینگ ذخیره کنید
+                    pass
+
+            # 6) اگر سند وجود نداشت، درج جدید
+            if not existing_doc:
+                doc = {
+                    "question": question_text.lower(),  # یا بدون lower() اگر می‌خواهید عیناً ذخیره شود
+                    "answers": answers_list,
+                    "tags": tags_list,
+                    "created_at": created_at_value
+                }
+                collection.insert_one(doc)
+                print(f"Inserted new question: {question_text}")
+            else:
+                # داده تکراری یافت شد (سوال از قبل موجود)
+                print(f"Question '{question_text}' already exists in DB. Skipped inserting.")
+                # اگر می‌خواهید پاسخ‌ها و تگ‌های جدید را به سند قبلی اضافه کنید،
+                # باید منطق آپدیت (update_one) بنویسید. درغیراینصورت کاری نکنید.
+                # ...
 
 
 parser = argparse.ArgumentParser(description="ChatBot Command Line Tool")
@@ -320,8 +367,8 @@ parser.add_argument('--filepath', type=str,
 
 args = parser.parse_args()
 
-
 if args.import_file:
+    # همچنان بررسی اینکه حتماً فایل CSV باشد
     if args.filetype.lower() != "csv":
         error_message = "Error: Only CSV filetype is supported."
         traceback_info = "Unsupported file type provided for import."
@@ -330,23 +377,12 @@ if args.import_file:
         exit()
 
     try:
-        validate_csv_path(args.filepath)  # Check file path and access
-        with open(args.filepath, mode='r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
+        validate_csv_path(args.filepath)  # بررسی مسیر و دسترسی فایل
+        # به‌جای منطق قبلی، فقط تابع جدید را صدا بزنید:
+        import_csv_to_mongo(args.filepath)
+        
+        print("Successfully imported questions and answers to MongoDB from", args.filepath)
 
-            # Check for required columns
-            if not reader.fieldnames or 'Question' not in reader.fieldnames:
-                raise ValueError("The CSV file format is unsupported or missing required columns.")
-
-            # Process the file
-            qa_pairs.clear()
-            for row in reader:
-                question = row['Question'].strip().lower()
-                answers = [row[col].strip() for col in ['Answer1', 'Answer2', 'Answer3', 'Answer4']if col in row and row[col].strip()]
-                qa_pairs[question] = answers
-
-            print(f"Successfully imported {len(qa_pairs)} questions and answers from {args.filepath}.")
-            
     except FileNotFoundError as e:
         error_message = str(e)
         traceback_info = traceback.format_exc()
@@ -373,8 +409,6 @@ if args.import_file:
         print(f"Error: {error_message}")
         save_error_logs(error_message, traceback_info)
     exit()
-
-
 
 
 if args.view_logs:
