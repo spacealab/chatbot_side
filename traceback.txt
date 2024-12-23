@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "C:\Users\ASUS\Desktop\New folder\taskt.py", line 42, in <module>
+    validate_csv_path(csv_file_path)  # بررسی مسیر و نوع فایل
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "C:\Users\ASUS\Desktop\New folder\taskt.py", line 15, in validate_csv_path
+    raise FileNotFoundError(f"The file path '{file_path}' does not exist.")
+FileNotFoundError: The file path 'questionPai.csv' does not exist.
