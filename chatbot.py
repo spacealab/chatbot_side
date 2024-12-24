@@ -515,10 +515,15 @@ if args.add:
 
 
 
-if args.remove and args.answer:
-    if args.question:
-        # question = args.question.lower()
-        remove_answer(csv_file_path, args.question, args.answer)
+if args.remove:
+    if args.question and args.answer:
+        # حذف پاسخ خاص
+        remove_answer(args.question, args.answer)
+    elif args.question:
+        # حذف کل سوال
+        remove_question(args.question)
+    else:
+        print("Error: Please specify a question to remove.")
     exit()
 
 
