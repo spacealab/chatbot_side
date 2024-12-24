@@ -62,28 +62,29 @@ def show_suggestions(keyword):
 
 # Respond to user questions
 def chatbot_response(user_input):
-    original_question = find_original_question(user_input)
-    if original_question:
-        user_input = original_question
+    try:
+        original_question = find_original_question(user_input)
+        if original_question:
+            user_input = original_question
 
-    user_input_lower = user_input.strip().lower()
+        user_input_lower = user_input.strip().lower()
 
-    # Search the database for the question
-    doc = collection.find_one({"question": user_input_lower})
-    if doc:
-        # If a document is found, return one of the answers
-        if doc["answers"]:
-            return random.choice(doc["answers"])
+        # Search the database for the question
+        doc = collection.find_one({"question": user_input_lower})
+        if doc:
+            # If a document is found, return one of the answers
+            if doc["answers"]:
+                return random.choice(doc["answers"])
+            else:
+                return "I'm sorry, I don't have an answer for that."
         else:
-            return "I'm sorry, I don't have an answer for that."
-    elif "hello" in user_input_lower:
-        return "Hello! How can I assist you today?"
-    elif "how are you?" in user_input_lower:
-        return "I'm here to help you! How can I assist you?"
-    elif "bye" in user_input_lower:
-        return "Goodbye! Have a great day!"
-    else:
-        return "I'm sorry, I don't know the answer to that."
+            return "I'm sorry, I couldn't find an answer for your question. Please try asking something else."
+    except Exception as e:
+        # Log the error and return a generic message
+        error_message = str(e)
+        traceback_info = traceback.format_exc()
+        save_error_logs(error_message, traceback_info)
+        return "An unexpected error occurred. Please try again later."
 
 # Split compound questions
 def split_question(user_input):
@@ -281,8 +282,8 @@ def import_csv_to_mongo(csv_path):
                 print(f"Question '{question_text}' already exists in DB. Skipped inserting.")
 
 def is_single_word(input_text):
-    # Checks if the input consists of only a single word
-    return len(input_text.split()) == 1
+    # Check if the input is a single word
+    return len(input_text.strip().split()) == 1
 
 def find_questions_by_tag(tag):
     # Search for all questions that include the specified tag
@@ -292,7 +293,7 @@ def find_questions_by_tag(tag):
 def display_questions_by_tag(tag):
     questions = find_questions_by_tag(tag)
     if not questions:
-        print(f"No questions found with the tag '{tag}'.")
+        print(f"Sorry, I couldn't find any questions related to '{tag}'. Please try another word.")
         return None
 
     print(f"Questions with tag '{tag}':")
@@ -341,7 +342,7 @@ parser.add_argument('--view-logs', action='store_true',help="View the log and tr
 parser.add_argument('--list-questions', action='store_true',help="List all internal questions")
 parser.add_argument('--add', action='store_true',help="Add a new question and answer to the internal list")
 parser.add_argument('--remove', action='store_true',help="Remove a question from the internal list")
-parser.add_argument('--question', type=str,help="Specify the question to add or remove")
+parser.add_argument('--question', type=str,help="Specify the question to add or remove or ask the chatbot")
 parser.add_argument('--answer', type=str,help="Specify the answer when adding a question")
 parser.add_argument('--import-file', action='store_true',help="Import questions and answers from a CSV file")
 parser.add_argument('--filetype', type=str,help="Specify the type of the file to import (e.g., CSV)")
@@ -396,6 +397,11 @@ if args.import_file:
 
 if args.view_logs:
     read_logs()
+    exit()
+    
+if args.question:
+    response = chatbot_response(args.question)
+    print(f"Chatbot: {response}")
     exit()
 
 if args.add:
@@ -456,22 +462,25 @@ if args.remove and args.question:
     exit()
 
 # Main program loop
-def is_single_word(input_text):
-    # Check if the input is a single word
-    return len(input_text.split()) == 1
-
-# Main program loop
 current_time = datetime.datetime.now().strftime("%H:%M:%S")
 print(f"{current_time} Hello! You can ask me questions. Type 'exit' to stop.")
 
 while True:
     current_time = datetime.datetime.now().strftime("%H:%M:%S")
-    user_input = input("You: ")
-    print(f"{current_time} You: {user_input}")
+    user_input = input(f"{current_time} You: ").strip().lower()
+    
+    # Handle empty or invalid inputs
+    if not user_input.strip():
+        print(f"{current_time} Chatbot: Please enter a valid question or command.")
+        continue  # Skip further processing and prompt the user again
 
-    if user_input.lower() == "exit":
-        print(f"{current_time} Chatbot: Goodbye!")
-        break
+    if user_input == "bye":
+        print(f"{current_time} Chatbot: Goodbye! Have a great day!")
+        break  # Exit the program when "bye" is typed
+    
+    elif user_input in ["hello", "hi"]:
+        print(f"{current_time} Chatbot: Hello! How can I assist you today?")
+        continue  # Skip further processing for "hi" or "hello"
 
     # If the input contains compound questions...
     if "?" in user_input and ("and" in user_input or "or" in user_input):
