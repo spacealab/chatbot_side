@@ -76,7 +76,7 @@ question_variants = {
     ],
     "What is language?": [
         "Can you explain communication?",
-        "Tell me about intraction.",
+        "Tell me about infraction.",
         "What does contact mean?"
     ]
 }
@@ -339,6 +339,37 @@ def import_csv_to_mongo(csv_path):
                 # باید منطق آپدیت (update_one) بنویسید. درغیراینصورت کاری نکنید.
                 # ...
 
+def is_single_word(input_text):
+    # بررسی می‌کند آیا ورودی فقط یک کلمه است
+    return len(input_text.split()) == 1
+
+def find_questions_by_tag(tag):
+    # جستجوی تمام سوالاتی که شامل تگ مشخص شده باشند
+    questions_with_tag = collection.find({"tags": tag})
+    return list(questions_with_tag)
+
+def display_questions_by_tag(tag):
+    questions = find_questions_by_tag(tag)
+    if not questions:
+        print(f"No questions found with the tag '{tag}'.")
+        return None
+
+    print(f"Questions with tag '{tag}':")
+    for i, question in enumerate(questions, start=1):
+        print(f"{i}. {question['question']}")
+
+    return questions
+def get_answer_by_selection(questions):
+    choice = input("Enter the number of the question you want the answer for: ").strip()
+    
+    if not choice.isdigit() or int(choice) < 1 or int(choice) > len(questions):
+        print("Invalid choice. Please try again.")
+        return None
+
+    selected_question = questions[int(choice) - 1]
+    print(f"Selected Question: {selected_question['question']}")
+    print(f"Answers: {', '.join(selected_question['answers'])}")
+
 
 parser = argparse.ArgumentParser(description="ChatBot Command Line Tool")
 # parser.add_argument("--question", type=str, help="Question to ask the chatbot")
@@ -526,6 +557,11 @@ if args.list_questions:
 
 
 # Main program loop
+def is_single_word(input_text):
+    # بررسی می‌کند آیا ورودی فقط یک کلمه است
+    return len(input_text.split()) == 1
+
+# Main program loop
 current_time = datetime.datetime.now().strftime("%H:%M:%S")
 print(f"{current_time} Hello! You can ask me questions. Type 'exit' to stop.")
 
@@ -542,16 +578,12 @@ while True:
     if "?" in user_input and ("and" in user_input or "or" in user_input):
         response = handle_compound_question(user_input)
     else:
-        # 1) بررسی تک‌کلمه بودن
-        user_input_lower = user_input.strip().lower()
-        words = user_input_lower.split()
-        is_single_word = (len(words) == 1)
-
-        # 2) اگر تک‌کلمه و جزو کلیدواژه‌ها
-        if is_single_word and user_input_lower in keyword_questions:
-            response = show_suggestions(user_input_lower)
+        if is_single_word(user_input):
+            # اگر ورودی فقط یک کلمه باشد
+            questions = display_questions_by_tag(user_input)
+            if questions:
+                get_answer_by_selection(questions)
         else:
             # 3) در سایر شرایط برویم سراغ سوال-جواب عادی
             response = chatbot_response(user_input)
-
-    print(f"{current_time} Chatbot: {response}")
+            print(f"{current_time} Chatbot: {response}")
