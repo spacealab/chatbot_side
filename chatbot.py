@@ -206,16 +206,27 @@ def export_mongo_to_csv(csv_file_path):
 def add_question(question, answers_list):
     question_lower = question.strip().lower()
     existing_doc = collection.find_one({"question": question_lower})
-    if existing_doc:
-        print(f"The question '{question}' already exists in database.")
-        return
     
-    doc = {
-        "question": question_lower,
-        "answers": answers_list
-    }
-    collection.insert_one(doc)
-    print(f"Added question '{question}' with answers {answers_list} to MongoDB.")
+    if existing_doc:
+        # اگر سوال وجود دارد، جواب‌ها را به لیست موجود اضافه کن
+        for answer in answers_list:
+            if answer not in existing_doc["answers"]:
+                existing_doc["answers"].append(answer)
+        
+        # به‌روزرسانی سند در دیتابیس
+        collection.update_one(
+            {"_id": existing_doc["_id"]},
+            {"$set": {"answers": existing_doc["answers"]}}
+        )
+        print(f"Updated question '{question}' with new answers: {answers_list}")
+    else:
+        # اگر سوال وجود ندارد، سوال و جواب جدید اضافه کن
+        doc = {
+            "question": question_lower,
+            "answers": answers_list
+        }
+        collection.insert_one(doc)
+        print(f"Added new question '{question}' with answers {answers_list} to MongoDB.")
 
 def remove_question(question):
     question_lower = question.strip().lower()
@@ -228,24 +239,29 @@ def remove_question(question):
 def add_answer(question, new_answer):
     question_lower = question.strip().lower()
     doc = collection.find_one({"question": question_lower})
+
     if not doc:
-        # اگر سوال وجود ندارد، بسازیم
+        # اگر سوال وجود ندارد، سوال و جواب جدید را اضافه کنیم
         doc = {
             "question": question_lower,
-            "answers": [new_answer]
+            "answers": [new_answer],
+            "tags": []  # می‌توانید در صورت نیاز تگ‌ها را نیز اضافه کنید
         }
         collection.insert_one(doc)
-        print(f"Question '{question}' did not exist. Created new entry with answer '{new_answer}'.")
+        print(f"Added new question '{question}' with answer '{new_answer}' to MongoDB.")
     else:
+        # اگر سوال وجود دارد
         if new_answer in doc["answers"]:
-            print(f"The answer '{new_answer}' already exists for question '{question}'.")
+            # اگر جواب موجود باشد
+            print(f"The answer '{new_answer}' already exists for question '{question}'. No changes made.")
         else:
+            # اگر جواب جدید باشد، آن را اضافه کنیم
             doc["answers"].append(new_answer)
             collection.update_one(
                 {"_id": doc["_id"]},
                 {"$set": {"answers": doc["answers"]}}
             )
-            print(f"Added new answer '{new_answer}' to question '{question}'.")
+            print(f"Added new answer '{new_answer}' to existing question '{question}'.")
 
 def remove_answer(question, answer):
     question_lower = question.strip().lower()
@@ -369,6 +385,30 @@ def get_answer_by_selection(questions):
     selected_question = questions[int(choice) - 1]
     print(f"Selected Question: {selected_question['question']}")
     print(f"Answers: {', '.join(selected_question['answers'])}")
+    
+def remove_question(question):
+    question_lower = question.strip().lower()
+    result = collection.delete_one({"question": question_lower})
+    if result.deleted_count > 0:
+        print(f"Removed question: '{question}' from MongoDB.")
+    else:
+        print(f"The question '{question}' does not exist in database.")
+
+def remove_answer(question, answer):
+    question_lower = question.strip().lower()
+    doc = collection.find_one({"question": question_lower})
+    if not doc:
+        print(f"The question '{question}' does not exist in database.")
+    else:
+        if answer in doc["answers"]:
+            doc["answers"].remove(answer)
+            collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"answers": doc["answers"]}}
+            )
+            print(f"Removed answer '{answer}' from question '{question}'.")
+        else:
+            print(f"The answer '{answer}' does not exist for question '{question}'.")
 
 
 parser = argparse.ArgumentParser(description="ChatBot Command Line Tool")
@@ -451,20 +491,24 @@ if args.add:
         question = args.question.strip().lower()
         answer = args.answer.strip()
 
-        if question in qa_pairs:
-            # Add answer to existing question
-            if answer not in qa_pairs[question]:
-                qa_pairs[question].append(answer)
-                print(f"Added answer '{answer}' to existing question: '{question}'")
+        # Check if the question exists
+        existing_doc = collection.find_one({"question": question})
+        if existing_doc:
+            # اگر سوال وجود دارد، پاسخ را اضافه کن
+            if answer not in existing_doc["answers"]:
+                existing_doc["answers"].append(answer)
+                collection.update_one(
+                    {"_id": existing_doc["_id"]},
+                    {"$set": {"answers": existing_doc["answers"]}}
+                )
+                print(f"Added new answer '{answer}' to existing question: '{question}'")
             else:
                 print(f"The answer '{answer}' already exists for question: '{question}'")
         else:
-            # Add new question with answer
-            qa_pairs[question] = [answer]
+            # اگر سوال وجود ندارد، سوال و پاسخ جدید اضافه کن
+            doc = {"question": question, "answers": [answer], "tags": []}
+            collection.insert_one(doc)
             print(f"Added new question: '{question}' with answer: '{answer}'")
-
-        # Save changes to CSV
-        save_to_csv(csv_file_path, qa_pairs)
     else:
         print("Error: Both --question and --answer must be specified when using --add.")
     exit()
@@ -478,71 +522,15 @@ if args.remove and args.answer:
     exit()
 
 
-if args.add:
-    if args.question and args.answer:
-        question = args.question.strip().lower()
-        answer = args.answer.strip()
-
-        # Check if the question exists
-        if question in qa_pairs:
-            if answer not in qa_pairs[question]:
-                qa_pairs[question].append(answer)
-                print(f"Added answer '{answer}' to existing question: '{question}'")
-            else:
-                print(f"The answer '{answer}' already exists for question: '{question}'")
-        else:
-            # Add a new question and answer
-            qa_pairs[question] = [answer]
-            print(f"Added new question: '{question}' with answer: '{answer}'")
-
-        # Save the updated qa_pairs to the CSV
-        save_to_csv(csv_file_path, qa_pairs)
+def remove_question(question):
+    question_lower = question.strip().lower()
+    result = collection.delete_one({"question": question_lower})
+    if result.deleted_count > 0:
+        print(f"Removed question: '{question}' from MongoDB.")
     else:
-        print("Error: Both --question and --answer must be specified when using --add.")
-    exit()
-        
-    answers = args.answer.split(';')
-
-    # اضافه کردن سوال و پاسخ به لیست
-    if args.question in qa_pairs:
-        print(f"Question '{args.question}' already exists.")
-    else:
-        qa_pairs[args.question] = answers
-        print(f"Added question: '{args.question}' with answer: '{args.answer}'")
-
-    save_to_csv('questionPair.csv', qa_pairs)
-
-    # توقف برنامه
-    exit()
+        print(f"The question '{question}' does not exist in database.")
 
 
-
-if args.remove:
-    if not args.question:
-        print("Error: --question must be specified when using --remove.")
-        exit()
-
-    question_key = args.question.strip().lower()
-
-    # حذف سوال از لیست
-    if args.question in qa_pairs:
-        del qa_pairs[args.question]
-        save_to_csv('questionPair.csv', qa_pairs)
-        print(f"Removed question: '{args.question}' and updated CSV file successfully.")
-    else:
-        print(f"Question '{args.question}' does not exist.")
-
-    # توقف برنامه
-    exit()
-
-
-if args.list_questions:
-    print("Listing all internal questions:\n")
-
-    # From qa_pairs
-    print("Questions from CSV:")
-    for question in qa_pairs.keys():
-        print(f"- {question}")
 
     # From keyword_questions
     print("\nKeyword-based questions:")
@@ -553,6 +541,15 @@ if args.list_questions:
 
     # Exit the program after printing questions
     exit()
+    
+if args.add and args.question and args.answer:
+    add_answer(args.question, args.answer)
+    exit()
+    
+if args.remove and args.question:
+    remove_question(args.question)
+    exit()
+
 
 
 
