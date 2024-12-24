@@ -5,16 +5,13 @@ import csv
 import argparse
 import os
 import traceback
-
 from pymongo import MongoClient
 
 client = MongoClient("mongodb://localhost:27017/")
 db = client["chatbot_db"]
 collection = db["questions_answers"]
 
-
 csv_file_path = "questionPair.csv"
-
 
 def validate_csv_path(file_path):
     if not os.path.exists(file_path):
@@ -25,17 +22,14 @@ def validate_csv_path(file_path):
     if not file_path.endswith('.csv'):
         raise ValueError(f"The file '{file_path}' is not a CSV file.")
 
-
 def save_error_logs(error_message, traceback_info):
     try:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         log_filename = f"log_{timestamp}.txt"
         traceback_filename = f"traceback_{timestamp}.txt"
-
         # Save the error message
         with open(log_filename, "w", encoding="utf-8") as log_file:
             log_file.write(f"Error: {error_message}\n")
-
         # Save the traceback
         with open(traceback_filename, "w", encoding="utf-8") as tb_file:
             tb_file.write(traceback_info)
@@ -44,86 +38,29 @@ def save_error_logs(error_message, traceback_info):
     except Exception as log_error:
         print(f"Failed to save logs: {log_error}")
 
-# Define keyword-related questions
-keyword_questions = {
-    "semester": [
-        "What is the start date of the semester?",
-        "How many semesters are there in a year?",
-        "Can I extend my semester duration?"
-    ],
-    "python": [
-        "What is Python?",
-        "How do I learn Python?",
-        "What are the main features of Python?"
-    ],
-    "ai": [
-        "What is ai?",
-        "What are the types of ai?",
-        "How does ai impact our daily lives?"
-    ]
-}
-
-# Define question variants
-question_variants = {
-    "Where is lecturing hall XXX?": [
-        "What is the location of lecturing hall XXX?",
-        "Where is lecturing hall XXX located?",
-        "How do I reach lecturing hall XXX?"
-    ],
-    "How do I learn Excel?": [
-        "What is the best way to learn Excel?",
-        "Can you tell me how to start learning Excel?"
-    ],
-    "What is language?": [
-        "Can you explain communication?",
-        "Tell me about infraction.",
-        "What does contact mean?"
-    ]
-}
-
 # Find the original question from variants
-
-
 def find_original_question(user_input):
-    for original, variants in question_variants.items():
-        if user_input.strip().lower() == original.strip().lower():
-            return original
-        for variant in variants:
-            if user_input.strip().lower() == variant.strip().lower():
-                return original
-    return None
+    doc = collection.find_one({"variants": {"$in": [user_input.strip().lower()]}})
+    return doc["question"] if doc else None
 
 # Show suggestions based on keywords
-
-
 def show_suggestions(keyword):
-    if keyword in keyword_questions:
+    docs = collection.find({"tags": keyword})
+    questions = [doc["question"] for doc in docs]
+    if questions:
         print("Here are some related questions:")
-        for i, question in enumerate(keyword_questions[keyword], 1):
+        for i, question in enumerate(questions, 1):
             print(f"{i}. {question}")
-
         choice = input("Select a question by typing its number: ")
         if choice.isdigit():
             choice = int(choice)
-            if 1 <= choice <= len(keyword_questions[keyword]):
-                selected_question = keyword_questions[keyword][choice - 1].strip(
-                ).lower()
-                # Fetch and return the response from qa_pairs
-                if selected_question in qa_pairs:
-                    # return chatbot_response(selected_question)
-                    return random.choice(qa_pairs[selected_question])
-                else:
-                    return "I'm sorry, I don't have an answer for that question."
-            else:
-                return "Invalid choice. Please try again."
-        else:
-            return "Invalid input. Please enter a number."
+            if 1 <= choice <= len(questions):
+                return questions[choice - 1]
+        return "Invalid choice. Please try again."
     else:
-        return "No related question found for this keyword."
+        return f"No related questions found for keyword '{keyword}'."
 
 # Respond to user questions
-
-
 def chatbot_response(user_input):
     original_question = find_original_question(user_input)
     if original_question:
@@ -131,11 +68,10 @@ def chatbot_response(user_input):
 
     user_input_lower = user_input.strip().lower()
 
-    # در دیتابیس جستجو کنید
+    # Search the database for the question
     doc = collection.find_one({"question": user_input_lower})
-
     if doc:
-        # اگر سندی پیدا شد، یکی از پاسخ‌ها را برمی‌گردانیم
+        # If a document is found, return one of the answers
         if doc["answers"]:
             return random.choice(doc["answers"])
         else:
@@ -150,8 +86,6 @@ def chatbot_response(user_input):
         return "I'm sorry, I don't know the answer to that."
 
 # Split compound questions
-
-
 def split_question(user_input):
     user_input = re.sub(r'^(hi|hello|hey), ?', '',
                         user_input.strip(), flags=re.IGNORECASE)
@@ -160,8 +94,6 @@ def split_question(user_input):
     return questions
 
 # Handle compound questions
-
-
 def handle_compound_question(user_input):
     questions = split_question(user_input)
     if not questions:
@@ -175,26 +107,24 @@ def handle_compound_question(user_input):
 def export_mongo_to_csv(csv_file_path):
     import csv
     
-    # تمام اسناد (Documents) را از دیتابیس بخوانید
-    docs = collection.find()  # collection: کالکشن questions_answers در MongoDB
+    # Read all documents from the database
+    docs = collection.find()  # collection: questions_answers collection in MongoDB
 
-    # ابتدا مشخص کنیم بیشترین تعداد پاسخ در همه اسناد چند تاست
+    # Determine the maximum number of answers in all documents
     max_answers = 0
-    all_docs = list(docs)  # تبدیل Cursor به لیست
+    all_docs = list(docs)  # Convert Cursor to a list
     for d in all_docs:
         if "answers" in d and len(d["answers"]) > max_answers:
             max_answers = len(d["answers"])
-    
     header = ["Question"] + [f"Answer{i+1}" for i in range(max_answers)]
 
     with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         writer.writerow(header)
-        
         for d in all_docs:
             question = d["question"]
             answers = d["answers"] if "answers" in d else []
-            # اگر تعداد پاسخ کمتر از max_answers بود، خالی پر کن
+            # If the number of answers is less than max_answers, fill with empty values
             while len(answers) < max_answers:
                 answers.append("")
             row = [question] + answers
@@ -202,25 +132,24 @@ def export_mongo_to_csv(csv_file_path):
 
     print(f"Data successfully exported from MongoDB to {csv_file_path}.")
 
-
 def add_question(question, answers_list):
     question_lower = question.strip().lower()
     existing_doc = collection.find_one({"question": question_lower})
     
     if existing_doc:
-        # اگر سوال وجود دارد، جواب‌ها را به لیست موجود اضافه کن
+        # If the question exists, add the answers to the existing list
         for answer in answers_list:
             if answer not in existing_doc["answers"]:
                 existing_doc["answers"].append(answer)
         
-        # به‌روزرسانی سند در دیتابیس
+        # Update the document in the database
         collection.update_one(
             {"_id": existing_doc["_id"]},
             {"$set": {"answers": existing_doc["answers"]}}
         )
         print(f"Updated question '{question}' with new answers: {answers_list}")
     else:
-        # اگر سوال وجود ندارد، سوال و جواب جدید اضافه کن
+        # If the question does not exist, add a new question and answers
         doc = {
             "question": question_lower,
             "answers": answers_list
@@ -239,23 +168,22 @@ def remove_question(question):
 def add_answer(question, new_answer):
     question_lower = question.strip().lower()
     doc = collection.find_one({"question": question_lower})
-
     if not doc:
-        # اگر سوال وجود ندارد، سوال و جواب جدید را اضافه کنیم
+        # If the question does not exist, add a new question and answer
         doc = {
             "question": question_lower,
             "answers": [new_answer],
-            "tags": []  # می‌توانید در صورت نیاز تگ‌ها را نیز اضافه کنید
+            "tags": []  # You can also add tags here if needed
         }
         collection.insert_one(doc)
         print(f"Added new question '{question}' with answer '{new_answer}' to MongoDB.")
     else:
-        # اگر سوال وجود دارد
+        # If the question exists
         if new_answer in doc["answers"]:
-            # اگر جواب موجود باشد
+            # If the answer already exists
             print(f"The answer '{new_answer}' already exists for question '{question}'. No changes made.")
         else:
-            # اگر جواب جدید باشد، آن را اضافه کنیم
+            # If the answer is new, add it
             doc["answers"].append(new_answer)
             collection.update_one(
                 {"_id": doc["_id"]},
@@ -306,42 +234,42 @@ def import_csv_to_mongo(csv_path):
         reader = csv.DictReader(file)
 
         for row in reader:
-            # 1) گرفتن فیلدها از فایل CSV
-            question_text = row['question'].strip()  # نام ستون باید در CSV lowercase یا همانطور که هست باشد
-            answers_str = row.get('answers', '').strip()  # رشته پاسخ‌ها
+            # 1) Extract fields from the CSV file
+            question_text = row['question'].strip()  # Column name should match exactly in the CSV, either lowercase or as is
+            answers_str = row.get('answers', '').strip()  # String containing answers
             tags_str = row.get('tags', '').strip()
             created_at_value = row.get('created_at', '').strip()
 
-            # 2) تبدیل answers به لیست
+            # 2) Convert answers to a list
             answers_list = []
             if answers_str:
-                # فرض می‌کنیم با ; از هم جدا شده
+                # Assume answers are separated by a semicolon (;)
                 answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
 
-            # 3) تبدیل tags به لیست
+            # 3) Convert tags to a list
             tags_list = []
             if tags_str:
                 tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
 
-            # 4) بررسی اینکه آیا question در دیتابیس موجود است (جلوگیری از تکراری بودن)
+            # 4) Check if the question already exists in the database (to avoid duplicates)
             existing_doc = collection.find_one({"question": question_text.lower()})
 
-            # 5) محاسبه created_at
+            # 5) Handle created_at field
             if not created_at_value:
-                # اگر خالی بود، زمان فعلی را قرار دهید
+                # If empty, use the current time
                 created_at_value = datetime.datetime.now()
             else:
-                # تلاش برای تبدیل رشته به datetime
+                # Attempt to convert the string to a datetime object
                 try:
                     created_at_value = datetime.datetime.strptime(created_at_value, "%Y-%m-%d %H:%M:%S")
                 except ValueError:
-                    # اگر فرمت درست نبود، می‌توانید warning بدهید یا به عنوان استرینگ ذخیره کنید
+                    # If the format is invalid, you can issue a warning or store it as a string
                     pass
 
-            # 6) اگر سند وجود نداشت، درج جدید
+            # 6) If the document does not exist, insert a new one
             if not existing_doc:
                 doc = {
-                    "question": question_text.lower(),  # یا بدون lower() اگر می‌خواهید عیناً ذخیره شود
+                    "question": question_text.lower(),  # Use lower() or leave it as-is based on requirements
                     "answers": answers_list,
                     "tags": tags_list,
                     "created_at": created_at_value
@@ -349,18 +277,15 @@ def import_csv_to_mongo(csv_path):
                 collection.insert_one(doc)
                 print(f"Inserted new question: {question_text}")
             else:
-                # داده تکراری یافت شد (سوال از قبل موجود)
+                # Duplicate data found (question already exists)
                 print(f"Question '{question_text}' already exists in DB. Skipped inserting.")
-                # اگر می‌خواهید پاسخ‌ها و تگ‌های جدید را به سند قبلی اضافه کنید،
-                # باید منطق آپدیت (update_one) بنویسید. درغیراینصورت کاری نکنید.
-                # ...
 
 def is_single_word(input_text):
-    # بررسی می‌کند آیا ورودی فقط یک کلمه است
+    # Checks if the input consists of only a single word
     return len(input_text.split()) == 1
 
 def find_questions_by_tag(tag):
-    # جستجوی تمام سوالاتی که شامل تگ مشخص شده باشند
+    # Search for all questions that include the specified tag
     questions_with_tag = collection.find({"tags": tag})
     return list(questions_with_tag)
 
@@ -412,34 +337,21 @@ def remove_answer(question, answer):
 
 
 parser = argparse.ArgumentParser(description="ChatBot Command Line Tool")
-# parser.add_argument("--question", type=str, help="Question to ask the chatbot")
-parser.add_argument('--view-logs', action='store_true',
-                    help="View the log and traceback files")
-
-parser.add_argument('--list-questions', action='store_true',
-                    help="List all internal questions")
-# تعریف آرگومان‌های جدید برای اضافه و حذف کردن سوالات
-parser.add_argument('--add', action='store_true',
-                    help="Add a new question and answer to the internal list")
-parser.add_argument('--remove', action='store_true',
-                    help="Remove a question from the internal list")
-parser.add_argument('--question', type=str,
-                    help="Specify the question to add or remove")
-parser.add_argument('--answer', type=str,
-                    help="Specify the answer when adding a question")
-
-parser.add_argument('--import-file', action='store_true',
-                    help="Import questions and answers from a CSV file")
-parser.add_argument('--filetype', type=str,
-                    help="Specify the type of the file to import (e.g., CSV)")
-parser.add_argument('--filepath', type=str,
-                    help="Specify the path to the file to import")
+parser.add_argument('--view-logs', action='store_true',help="View the log and traceback files")
+parser.add_argument('--list-questions', action='store_true',help="List all internal questions")
+parser.add_argument('--add', action='store_true',help="Add a new question and answer to the internal list")
+parser.add_argument('--remove', action='store_true',help="Remove a question from the internal list")
+parser.add_argument('--question', type=str,help="Specify the question to add or remove")
+parser.add_argument('--answer', type=str,help="Specify the answer when adding a question")
+parser.add_argument('--import-file', action='store_true',help="Import questions and answers from a CSV file")
+parser.add_argument('--filetype', type=str,help="Specify the type of the file to import (e.g., CSV)")
+parser.add_argument('--filepath', type=str,help="Specify the path to the file to import")
 
 
 args = parser.parse_args()
 
 if args.import_file:
-    # همچنان بررسی اینکه حتماً فایل CSV باشد
+    # Ensure that the file type is CSV
     if args.filetype.lower() != "csv":
         error_message = "Error: Only CSV filetype is supported."
         traceback_info = "Unsupported file type provided for import."
@@ -448,8 +360,8 @@ if args.import_file:
         exit()
 
     try:
-        validate_csv_path(args.filepath)  # بررسی مسیر و دسترسی فایل
-        # به‌جای منطق قبلی، فقط تابع جدید را صدا بزنید:
+        validate_csv_path(args.filepath)  # Check the file path and access permissions
+        # Instead of the previous logic, simply call the new function:
         import_csv_to_mongo(args.filepath)
         
         print("Successfully imported questions and answers to MongoDB from", args.filepath)
@@ -494,7 +406,7 @@ if args.add:
         # Check if the question exists
         existing_doc = collection.find_one({"question": question})
         if existing_doc:
-            # اگر سوال وجود دارد، پاسخ را اضافه کن
+            # If the question exists, add the answer
             if answer not in existing_doc["answers"]:
                 existing_doc["answers"].append(answer)
                 collection.update_one(
@@ -505,7 +417,7 @@ if args.add:
             else:
                 print(f"The answer '{answer}' already exists for question: '{question}'")
         else:
-            # اگر سوال وجود ندارد، سوال و پاسخ جدید اضافه کن
+            # If the question does not exist, add the new question and answer
             doc = {"question": question, "answers": [answer], "tags": []}
             collection.insert_one(doc)
             print(f"Added new question: '{question}' with answer: '{answer}'")
@@ -513,19 +425,16 @@ if args.add:
         print("Error: Both --question and --answer must be specified when using --add.")
     exit()
 
-
-
 if args.remove:
     if args.question and args.answer:
-        # حذف پاسخ خاص
+        # Remove a specific answer
         remove_answer(args.question, args.answer)
     elif args.question:
-        # حذف کل سوال
+        # Remove the entire question
         remove_question(args.question)
     else:
         print("Error: Please specify a question to remove.")
     exit()
-
 
 def remove_question(question):
     question_lower = question.strip().lower()
@@ -534,15 +443,6 @@ def remove_question(question):
         print(f"Removed question: '{question}' from MongoDB.")
     else:
         print(f"The question '{question}' does not exist in database.")
-
-
-
-    # From keyword_questions
-    print("\nKeyword-based questions:")
-    for keyword, questions in keyword_questions.items():
-        print(f"\nKeyword: {keyword}")
-        for question in questions:
-            print(f"  - {question}")
 
     # Exit the program after printing questions
     exit()
@@ -555,12 +455,9 @@ if args.remove and args.question:
     remove_question(args.question)
     exit()
 
-
-
-
 # Main program loop
 def is_single_word(input_text):
-    # بررسی می‌کند آیا ورودی فقط یک کلمه است
+    # Check if the input is a single word
     return len(input_text.split()) == 1
 
 # Main program loop
@@ -576,16 +473,16 @@ while True:
         print(f"{current_time} Chatbot: Goodbye!")
         break
 
-    # اگر ورودی حاوی پرسش‌های مرکب است...
+    # If the input contains compound questions...
     if "?" in user_input and ("and" in user_input or "or" in user_input):
         response = handle_compound_question(user_input)
     else:
         if is_single_word(user_input):
-            # اگر ورودی فقط یک کلمه باشد
+            # If the input is a single word
             questions = display_questions_by_tag(user_input)
             if questions:
                 get_answer_by_selection(questions)
         else:
-            # 3) در سایر شرایط برویم سراغ سوال-جواب عادی
+            # In other cases, use normal question-answer logic
             response = chatbot_response(user_input)
             print(f"{current_time} Chatbot: {response}")
