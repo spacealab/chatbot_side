@@ -258,6 +258,11 @@ def read_logs():
 def import_csv_to_mongo(csv_path):
     with open(csv_path, mode='r', encoding='utf-8') as file:
         reader = csv.DictReader(file)
+        
+        # بررسی حداقل تعداد سوالات
+        rows = list(reader)
+        if len(rows) < 10:
+            raise ValueError("The CSV file must contain at least 10 Q&A entries.")
 
         for row in reader:
             # 1) Extract fields from the CSV file
@@ -269,6 +274,9 @@ def import_csv_to_mongo(csv_path):
 
             # 2) Convert answers to a list
             answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
+            
+            if len(answers_list) > 4:
+                raise ValueError(f"Question '{question_text}' has more than 4 answers. Please limit to 4.")
 
             # 3) Convert tags to a list
             tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
