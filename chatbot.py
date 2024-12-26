@@ -88,21 +88,34 @@ def chatbot_response(user_input):
 
 # Split compound questions
 def split_question(user_input):
-    user_input = re.sub(r'^(hi|hello|hey), ?', '',
-                        user_input.strip(), flags=re.IGNORECASE)
+    # Remove initial greetings like "hi", "hello", or "hey"
+    user_input = re.sub(r'^(hi|hello|hey),?', '', user_input.strip(), flags=re.IGNORECASE)
+    
+    # Split the input into questions using keywords "and", "or", or question marks
     questions = re.split(r'\?\s*(?:and|or)?\s*', user_input)
+    
+    # Remove empty questions from the list and add a question mark at the end of each question
     questions = [q.strip() + '?' for q in questions if q.strip()]
+    
     return questions
 
 # Handle compound questions
 def handle_compound_question(user_input):
+    # Split the input into individual questions
     questions = split_question(user_input)
+    
+    # If no valid questions are found
     if not questions:
         return "I couldn't identify any valid questions in your input."
+    
+    # Process each question and generate a response
     responses = []
     for question in questions:
-        question_response = chatbot_response(question)
-        responses.append(f"Q: {question} A: {question_response}")
+        if question.strip():  # Check that the question is not empty
+            question_response = chatbot_response(question.strip())
+            responses.append(f"Q: {question} A: {question_response}")
+    
+    # Combine responses into a single string
     return "\n".join(responses)
 
 def export_mongo_to_csv(csv_file_path):
@@ -485,6 +498,7 @@ while True:
     # If the input contains compound questions...
     if "?" in user_input and ("and" in user_input or "or" in user_input):
         response = handle_compound_question(user_input)
+        print(f"{current_time} Chatbot:\n{response}")
     else:
         if is_single_word(user_input):
             # If the input is a single word
