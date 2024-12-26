@@ -40,8 +40,14 @@ def save_error_logs(error_message, traceback_info):
 
 # Find the original question from variants
 def find_original_question(user_input):
-    doc = collection.find_one({"variants": {"$in": [user_input.strip().lower()]}})
-    return doc["question"] if doc else None
+    # جستجو در سوال اصلی و تنوع‌ها
+    doc = collection.find_one({
+        "$or": [
+            {"question": user_input.strip().lower()},
+            {"variants": {"$in": [user_input.strip().lower()]}}
+        ]
+    })
+    return doc
 
 # Show suggestions based on keywords
 def show_suggestions(keyword):
@@ -61,18 +67,24 @@ def show_suggestions(keyword):
         return f"No related questions found for keyword '{keyword}'."
 
 # Respond to user questions
+# Respond to user questions
 def chatbot_response(user_input):
     try:
-        original_question = find_original_question(user_input)
-        if original_question:
-            user_input = original_question
+        # جستجوی سوال در دیتابیس
+        doc = collection.find_one({
+            "$or": [
+                {"question": user_input.strip().lower()},
+                {"variants": {"$in": [user_input.strip().lower()]}}
+            ]
+        })
+        
+        if not doc:
+            print(f"Document not found for input: {user_input.strip().lower()}")
+            return "I'm sorry, I couldn't find an answer for your question. Please try asking something else."
 
-        user_input_lower = user_input.strip().lower()
 
-        # Search the database for the question
-        doc = collection.find_one({"question": user_input_lower})
         if doc:
-            # If a document is found, return one of the answers
+            # اگر سندی پیدا شد، یکی از پاسخ‌ها را برگرداند
             if doc["answers"]:
                 return random.choice(doc["answers"])
             else:
@@ -80,7 +92,7 @@ def chatbot_response(user_input):
         else:
             return "I'm sorry, I couldn't find an answer for your question. Please try asking something else."
     except Exception as e:
-        # Log the error and return a generic message
+        # ثبت خطا و نمایش پیام عمومی
         error_message = str(e)
         traceback_info = traceback.format_exc()
         save_error_logs(error_message, traceback_info)
@@ -249,50 +261,65 @@ def import_csv_to_mongo(csv_path):
 
         for row in reader:
             # 1) Extract fields from the CSV file
-            question_text = row['question'].strip()  # Column name should match exactly in the CSV, either lowercase or as is
-            answers_str = row.get('answers', '').strip()  # String containing answers
+            question_text = row['question'].strip().lower()
+            variants_str = row.get('variants', '').strip()  # New field for variants
+            answers_str = row.get('answers', '').strip()
             tags_str = row.get('tags', '').strip()
             created_at_value = row.get('created_at', '').strip()
 
             # 2) Convert answers to a list
-            answers_list = []
-            if answers_str:
-                # Assume answers are separated by a semicolon (;)
-                answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
+            answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
 
             # 3) Convert tags to a list
-            tags_list = []
-            if tags_str:
-                tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
+            tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
 
-            # 4) Check if the question already exists in the database (to avoid duplicates)
-            existing_doc = collection.find_one({"question": question_text.lower()})
+            # 4) Convert variants to a list
+            variants_list = [variant.strip().lower() for variant in variants_str.split(';') if variant.strip()]
 
             # 5) Handle created_at field
             if not created_at_value:
-                # If empty, use the current time
                 created_at_value = datetime.datetime.now()
             else:
-                # Attempt to convert the string to a datetime object
                 try:
                     created_at_value = datetime.datetime.strptime(created_at_value, "%Y-%m-%d %H:%M:%S")
                 except ValueError:
-                    # If the format is invalid, you can issue a warning or store it as a string
-                    pass
+                    created_at_value = datetime.datetime.now()
 
-            # 6) If the document does not exist, insert a new one
-            if not existing_doc:
+            # 6) Check if the question already exists in the database
+            existing_doc = collection.find_one({"question": question_text})
+
+            if existing_doc:
+                # Update the existing document
+                existing_answers = set(existing_doc.get("answers", []))
+                existing_tags = set(existing_doc.get("tags", []))
+                existing_variants = set(existing_doc.get("variants", []))
+
+                # Add new answers, tags, and variants
+                updated_answers = list(existing_answers.union(answers_list))
+                updated_tags = list(existing_tags.union(tags_list))
+                updated_variants = list(existing_variants.union(variants_list))
+
+                collection.update_one(
+                    {"_id": existing_doc["_id"]},
+                    {"$set": {
+                        "answers": updated_answers,
+                        "tags": updated_tags,
+                        "variants": updated_variants,
+                        "created_at": created_at_value
+                    }}
+                )
+                print(f"Updated question: '{question_text}'")
+            else:
+                # Insert a new document
                 doc = {
-                    "question": question_text.lower(),  # Use lower() or leave it as-is based on requirements
+                    "question": question_text,
+                    "variants": variants_list,
                     "answers": answers_list,
                     "tags": tags_list,
                     "created_at": created_at_value
                 }
                 collection.insert_one(doc)
-                print(f"Inserted new question: {question_text}")
-            else:
-                # Duplicate data found (question already exists)
-                print(f"Question '{question_text}' already exists in DB. Skipped inserting.")
+                print(f"Inserted new question: '{question_text}'")
 
 def is_single_word(input_text):
     # Check if the input is a single word
