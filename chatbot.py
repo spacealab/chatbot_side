@@ -379,7 +379,7 @@ def remove_answer(question, answer):
 
 parser = argparse.ArgumentParser(description="ChatBot Command Line Tool")
 parser.add_argument('--view-logs', action='store_true',help="View the log and traceback files")
-parser.add_argument('--list-questions', action='store_true',help="List all internal questions")
+parser.add_argument('--list-questions', action='store_true', help="List all internal questions")
 parser.add_argument('--add', action='store_true',help="Add a new question and answer to the internal list")
 parser.add_argument('--remove', action='store_true',help="Remove a question from the internal list")
 parser.add_argument('--question', type=str,help="Specify the question to add or remove or ask the chatbot")
@@ -499,6 +499,13 @@ if args.add and args.question and args.answer:
     
 if args.remove and args.question:
     remove_question(args.question)
+    exit()
+    
+if args.list_questions:  # تغییر از list-questions به list_questions
+    docs = collection.find({}, {"_id": 0, "question": 1})
+    print("List of all questions:")
+    for doc in docs:
+        print(f"- {doc['question']}")
     exit()
 
 # Main program loop
