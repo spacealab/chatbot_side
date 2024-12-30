@@ -67,30 +67,74 @@ def show_suggestions(keyword):
         return f"No related questions found for keyword '{keyword}'."
 
 # Respond to user questions
-# Respond to user questions
-def chatbot_response(user_input):
+def chatbot_response(user_input, answer=None, variants=None, tags=None):
     try:
-        # جستجوی سوال در دیتابیس
+        # جستجوی سؤال در پایگاه داده
         doc = collection.find_one({
             "$or": [
                 {"question": user_input.strip().lower()},
                 {"variants": {"$in": [user_input.strip().lower()]}}
             ]
         })
-        
+
         if not doc:
             print(f"Document not found for input: {user_input.strip().lower()}")
-            return "I'm sorry, I couldn't find an answer for your question. Please try asking something else."
+            
+            # اضافه کردن سؤال جدید به پایگاه داده
+            new_doc = {
+                "question": user_input.strip().lower(),
+                "variants": [variant.strip().lower() for variant in (variants or [])],  # اضافه کردن variants
+                "answers": [answer.strip()] if answer else [],  # اضافه کردن پاسخ اگر وجود داشت
+                "tags": [tag.strip().lower() for tag in (tags or [])],  # اضافه کردن tags
+                "created_at": datetime.datetime.now()
+            }
+            collection.insert_one(new_doc)  # ذخیره سؤال در دیتابیس
 
+            if answer or variants or tags:
+                return f"This question was not in the database. I have added it with the provided details."
+            else:
+                return "This question was not in the database. I have added it for future use, but it currently has no details."
 
+        # اگر سندی پیدا شد
         if doc:
-            # اگر سندی پیدا شد، یکی از پاسخ‌ها را برگرداند
+            update_required = False  # پرچم برای آپدیت پایگاه داده
+
+            # اگر پاسخ جدید ارائه شده و قبلاً در لیست پاسخ‌ها وجود نداشته باشد
+            if answer and answer.strip() not in doc.get("answers", []):
+                doc["answers"].append(answer.strip())
+                update_required = True
+
+            # اگر variant جدید ارائه شده و قبلاً در لیست variants وجود نداشته باشد
+            if variants:
+                for variant in variants:
+                    if variant.strip().lower() not in doc.get("variants", []):
+                        doc["variants"].append(variant.strip().lower())
+                        update_required = True
+
+            # اگر tag جدید ارائه شده و قبلاً در لیست tags وجود نداشته باشد
+            if tags:
+                for tag in tags:
+                    if tag.strip().lower() not in doc.get("tags", []):
+                        doc["tags"].append(tag.strip().lower())
+                        update_required = True
+
+            # به‌روزرسانی سند در پایگاه داده در صورت نیاز
+            if update_required:
+                collection.update_one(
+                    {"_id": doc["_id"]},
+                    {"$set": {"answers": doc["answers"], "variants": doc["variants"], "tags": doc["tags"]}}
+                )
+                return f"The details have been updated for the existing question."
+
+            # اگر همه جزئیات موجود باشند
             if doc["answers"]:
                 return random.choice(doc["answers"])
             else:
-                return "I'm sorry, I don't have an answer for that."
-        else:
-            return "I'm sorry, I couldn't find an answer for your question. Please try asking something else."
+                return "I'm sorry, I don't have an answer for that right now. You can provide one to add."
+
+        # شرط اضافی برای اطمینان
+        return "I'm sorry, I couldn't find an answer for your question. Please try asking something else."
+
     except Exception as e:
         # ثبت خطا و نمایش پیام عمومی
         error_message = str(e)
@@ -391,12 +435,16 @@ parser.add_argument('--view-logs', action='store_true',help="View the log and tr
 parser.add_argument('--list-questions', action='store_true', help="List all internal questions")
 parser.add_argument('--add', action='store_true',help="Add a new question and answer to the internal list")
 parser.add_argument('--remove', action='store_true',help="Remove a question from the internal list")
+parser.add_argument('--remove-answer', type=str, help="Specify the answer to remove from the question")
+parser.add_argument('--remove-tag', type=str, help="Specify the tag to remove from the question")
+parser.add_argument('--remove-variant', type=str, help="Specify the variant to remove from the question")
 parser.add_argument('--question', type=str,help="Specify the question to add or remove or ask the chatbot")
 parser.add_argument('--answer', type=str,help="Specify the answer when adding a question")
 parser.add_argument('--import-file', action='store_true',help="Import questions and answers from a CSV file")
 parser.add_argument('--filetype', type=str,help="Specify the type of the file to import (e.g., CSV)")
 parser.add_argument('--filepath', type=str,help="Specify the path to the file to import")
-
+parser.add_argument('--variants', type=str, help="Specify variants for the question, separated by semicolons")
+parser.add_argument('--tags', type=str, help="Specify tags for the question, separated by semicolons")
 
 args = parser.parse_args()
 
@@ -411,36 +459,46 @@ if args.import_file:
 
     try:
         validate_csv_path(args.filepath)  # Check the file path and access permissions
-        # Instead of the previous logic, simply call the new function:
         import_csv_to_mongo(args.filepath)
-        
         print("Successfully imported questions and answers to MongoDB from", args.filepath)
 
-    except FileNotFoundError as e:
-        error_message = str(e)
-        traceback_info = traceback.format_exc()
-        print(f"Error: {error_message}")
-        save_error_logs(error_message, traceback_info)
-    except PermissionError as e:
-        error_message = str(e)
-        traceback_info = traceback.format_exc()
-        print(f"Error: {error_message}")
-        save_error_logs(error_message, traceback_info)
-    except ValueError as e:
-        error_message = str(e)
-        traceback_info = traceback.format_exc()
-        print(f"Error: {error_message}")
-        save_error_logs(error_message, traceback_info)
-    except csv.Error as e:
-        error_message = "The CSV file is corrupted and cannot be processed."
-        traceback_info = traceback.format_exc()
-        print(f"Error: {error_message}")
-        save_error_logs(error_message, traceback_info)
     except Exception as e:
         error_message = str(e)
         traceback_info = traceback.format_exc()
         print(f"Error: {error_message}")
         save_error_logs(error_message, traceback_info)
+    exit()
+
+if args.view_logs:
+    read_logs()
+    exit()
+    
+if args.add and args.question:
+    question = args.question.strip().lower()
+    answer = args.answer.strip() if args.answer else None
+    variants = [v.strip() for v in args.variants.split(";")] if args.variants else None
+    tags = [t.strip() for t in args.tags.split(";")] if args.tags else None
+
+    response = chatbot_response(question, answer=answer, variants=variants, tags=tags)
+    print(f"Chatbot: {response}")
+    exit()
+
+if args.remove:
+    if args.question and args.answer:
+        # Remove a specific answer
+        remove_answer(args.question, args.answer)
+    elif args.question:
+        # Remove the entire question
+        remove_question(args.question)
+    else:
+        print("Error: Please specify a question to remove.")
+    exit()
+
+if args.list_questions:  # تغییر از list-questions به list_questions
+    docs = collection.find({}, {"_id": 0, "question": 1})
+    print("List of all questions:")
+    for doc in docs:
+        print(f"- {doc['question']}")
     exit()
 
 
@@ -507,7 +565,45 @@ if args.add and args.question and args.answer:
     exit()
     
 if args.remove and args.question:
-    remove_question(args.question)
+    question = args.question.strip().lower()
+
+    if args.remove_answer:
+        answer_to_remove = args.remove_answer.strip()
+        doc = collection.find_one({"question": question})
+        if doc and answer_to_remove in doc.get("answers", []):
+            doc["answers"].remove(answer_to_remove)
+            collection.update_one({"_id": doc["_id"]}, {"$set": {"answers": doc["answers"]}})
+            print(f"Removed answer '{answer_to_remove}' from question '{question}'.")
+        else:
+            print(f"Answer '{answer_to_remove}' not found for question '{question}'.")
+
+    if args.remove_tag:
+        tag_to_remove = args.remove_tag.strip().lower()
+        doc = collection.find_one({"question": question})
+        if doc and tag_to_remove in doc.get("tags", []):
+            doc["tags"].remove(tag_to_remove)
+            collection.update_one({"_id": doc["_id"]}, {"$set": {"tags": doc["tags"]}})
+            print(f"Removed tag '{tag_to_remove}' from question '{question}'.")
+        else:
+            print(f"Tag '{tag_to_remove}' not found for question '{question}'.")
+
+    if args.remove_variant:
+        variant_to_remove = args.remove_variant.strip().lower()
+        doc = collection.find_one({"question": question})
+        if doc and variant_to_remove in doc.get("variants", []):
+            doc["variants"].remove(variant_to_remove)
+            collection.update_one({"_id": doc["_id"]}, {"$set": {"variants": doc["variants"]}})
+            print(f"Removed variant '{variant_to_remove}' from question '{question}'.")
+        else:
+            print(f"Variant '{variant_to_remove}' not found for question '{question}'.")
+
+    # اگر هیچکدام از شرایط بالا فعال نبود، کل سؤال حذف می‌شود
+    if not args.remove_answer and not args.remove_tag and not args.remove_variant:
+        result = collection.delete_one({"question": question})
+        if result.deleted_count > 0:
+            print(f"Removed question: '{question}' from MongoDB.")
+        else:
+            print(f"The question '{question}' does not exist in database.")
     exit()
     
 if args.list_questions:  # تغییر از list-questions به list_questions
