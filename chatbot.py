@@ -6,12 +6,48 @@ import argparse
 import os
 import traceback
 from pymongo import MongoClient
+import unittest
+import sys 
+import logging
+
 
 client = MongoClient("mongodb://localhost:27017/")
 db = client["chatbot_db"]
 collection = db["questions_answers"]
 
 csv_file_path = "questionPair.csv"
+
+def print_help():
+    help_text = """
+ChatBot Command Line Tool
+
+Usage:
+  python3 chatbot.py [OPTIONS]
+
+Options:
+  --help                Show this help message and exit.
+  --log-mode            Enable logging mode.
+  --log-level LEVEL     Set the logging level (INFO or WARNING). Default is WARNING.
+  --import-file         Import questions and answers from a CSV file.
+  --filetype TYPE       Specify the type of the file to import (e.g., CSV).
+  --filepath PATH       Specify the path to the file to import.
+  --add                 Add a new question and answer to the internal list.
+  --question QUESTION   Specify the question to add or remove or ask the chatbot.
+  --answer ANSWER       Specify the answer when adding a question.
+  --remove              Remove a question from the internal list.
+  --remove-answer ANSWER  Specify the answer to remove from the question.
+  --remove-tag TAG      Specify the tag to remove from the question.
+  --remove-variant VARIANT  Specify the variant to remove from the question.
+  --list-questions      List all internal questions.
+  --view-logs           View the log and traceback files.
+  --test                Run unit tests.
+
+Examples:
+  python3 chatbot.py --add --question "What is Python?" --answer "A programming language."
+  python3 chatbot.py --import-file --filetype csv --filepath questionPair.csv
+  python3 chatbot.py --log-mode --log-level INFO
+    """
+    print(help_text)
 
 def validate_csv_path(file_path):
     if not os.path.exists(file_path):
@@ -69,6 +105,7 @@ def show_suggestions(keyword):
 # Respond to user questions
 def chatbot_response(user_input, answer=None, variants=None, tags=None):
     try:
+        logging.info(f"Searching for answer to: {user_input}")
         # جستجوی سؤال در پایگاه داده
         doc = collection.find_one({
             "$or": [
@@ -78,6 +115,7 @@ def chatbot_response(user_input, answer=None, variants=None, tags=None):
         })
 
         if not doc:
+            logging.warning(f"No document found for input: {user_input}")
             print(f"Document not found for input: {user_input.strip().lower()}")
             
             # اضافه کردن سؤال جدید به پایگاه داده
@@ -300,79 +338,91 @@ def read_logs():
         save_error_logs(error_message, traceback_info)
 
 def import_csv_to_mongo(csv_path):
-    with open(csv_path, mode='r', encoding='utf-8') as file:
-        reader = csv.DictReader(file)
-        
-        # بررسی تعداد سوالات در فایل CSV
-        rows = list(reader)
-        if len(rows) < 10:
-            raise ValueError("The CSV file must contain at least 10 Q&A entries.")
-        
-        for row in rows:
-            # 1) Extract fields from the CSV file
-            question_text = row['question'].strip().lower()
-            variants_str = row.get('variants', '').strip()  # New field for variants
-            answers_str = row.get('answers', '').strip()
-            tags_str = row.get('tags', '').strip()
-            created_at_value = row.get('created_at', '').strip()
-
-            # 2) Convert answers to a list
-            answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
+    logging.info(f"Importing data from CSV file: {csv_path}")
+    try:
+        with open(csv_path, mode='r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
             
-            # بررسی تعداد پاسخ‌ها
-            if len(answers_list) > 4:
-                raise ValueError(f"Each question can have a maximum of 4 answers. Question: '{question_text}' has {len(answers_list)} answers.")
+            # بررسی تعداد سوالات در فایل CSV
+            rows = list(reader)
+            if len(rows) < 10:
+                logging.warning("The CSV file must contain at least 10 Q&A entries.")
+                raise ValueError("The CSV file must contain at least 10 Q&A entries.")
+            
+            for row in rows:
+                # 1) Extract fields from the CSV file
+                question_text = row['question'].strip().lower()
+                variants_str = row.get('variants', '').strip()  # New field for variants
+                answers_str = row.get('answers', '').strip()
+                tags_str = row.get('tags', '').strip()
+                created_at_value = row.get('created_at', '').strip()
 
-            # 3) Convert tags to a list
-            tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
+                # 2) Convert answers to a list
+                answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
+                
+                # بررسی تعداد پاسخ‌ها
+                if len(answers_list) > 4:
+                    logging.warning(f"Each question can have a maximum of 4 answers. Question: '{question_text}' has {len(answers_list)} answers.")
+                    raise ValueError(f"Each question can have a maximum of 4 answers. Question: '{question_text}' has {len(answers_list)} answers.")
 
-            # 4) Convert variants to a list
-            variants_list = [variant.strip().lower() for variant in variants_str.split(';') if variant.strip()]
+                # 3) Convert tags to a list
+                tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
 
-            # 5) Handle created_at field
-            if not created_at_value:
-                created_at_value = datetime.datetime.now()
-            else:
-                try:
-                    created_at_value = datetime.datetime.strptime(created_at_value, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
+                # 4) Convert variants to a list
+                variants_list = [variant.strip().lower() for variant in variants_str.split(';') if variant.strip()]
+
+                # 5) Handle created_at field
+                if not created_at_value:
                     created_at_value = datetime.datetime.now()
+                else:
+                    try:
+                        created_at_value = datetime.datetime.strptime(created_at_value, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        logging.warning(f"Invalid date format for question: '{question_text}'. Using current time.")
+                        created_at_value = datetime.datetime.now()
 
-            # 6) Check if the question already exists in the database
-            existing_doc = collection.find_one({"question": question_text})
+                # 6) Check if the question already exists in the database
+                existing_doc = collection.find_one({"question": question_text})
 
-            if existing_doc:
-                # Update the existing document
-                existing_answers = set(existing_doc.get("answers", []))
-                existing_tags = set(existing_doc.get("tags", []))
-                existing_variants = set(existing_doc.get("variants", []))
+                if existing_doc:
+                    # Update the existing document
+                    existing_answers = set(existing_doc.get("answers", []))
+                    existing_tags = set(existing_doc.get("tags", []))
+                    existing_variants = set(existing_doc.get("variants", []))
 
-                # Add new answers, tags, and variants
-                updated_answers = list(existing_answers.union(answers_list))
-                updated_tags = list(existing_tags.union(tags_list))
-                updated_variants = list(existing_variants.union(variants_list))
+                    # Add new answers, tags, and variants
+                    updated_answers = list(existing_answers.union(answers_list))
+                    updated_tags = list(existing_tags.union(tags_list))
+                    updated_variants = list(existing_variants.union(variants_list))
 
-                collection.update_one(
-                    {"_id": existing_doc["_id"]},
-                    {"$set": {
-                        "answers": updated_answers,
-                        "tags": updated_tags,
-                        "variants": updated_variants,
+                    collection.update_one(
+                        {"_id": existing_doc["_id"]},
+                        {"$set": {
+                            "answers": updated_answers,
+                            "tags": updated_tags,
+                            "variants": updated_variants,
+                            "created_at": created_at_value
+                        }}
+                    )
+                    logging.info(f"Updated question: '{question_text}'")
+                else:
+                    # Insert a new document
+                    doc = {
+                        "question": question_text,
+                        "variants": variants_list,
+                        "answers": answers_list,
+                        "tags": tags_list,
                         "created_at": created_at_value
-                    }}
-                )
-                print(f"Updated question: '{question_text}'")
-            else:
-                # Insert a new document
-                doc = {
-                    "question": question_text,
-                    "variants": variants_list,
-                    "answers": answers_list,
-                    "tags": tags_list,
-                    "created_at": created_at_value
-                }
-                collection.insert_one(doc)
-                print(f"Inserted new question: '{question_text}'")
+                    }
+                    collection.insert_one(doc)
+                    logging.info(f"Inserted new question: '{question_text}'")
+
+    except FileNotFoundError:
+        logging.error(f"CSV file not found: {csv_path}")
+        raise
+    except Exception as e:
+        logging.error(f"Error importing CSV: {e}")
+        raise
 
 def is_single_word(input_text):
     # Check if the input is a single word
@@ -429,8 +479,22 @@ def remove_answer(question, answer):
         else:
             print(f"The answer '{answer}' does not exist for question '{question}'.")
 
+def setup_logging(log_level="WARNING"):
+    """
+    Configure logging based on the provided log level.
+    """
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename='chatbot.log',  # Save logs to a file
+        filemode='a'  # Append to the log file
+    )
 
-parser = argparse.ArgumentParser(description="ChatBot Command Line Tool")
+parser = argparse.ArgumentParser(description="ChatBot Command Line Tool", add_help=False)
+parser.add_argument('--help', action='store_true', help="Show help message and exit")
+parser.add_argument('--log-mode', action='store_true', help="Enable logging mode")
+parser.add_argument('--log-level', type=str, choices=['INFO', 'WARNING'], default='WARNING', help="Set the logging level (INFO or WARNING)")
+parser.add_argument('--test', action='store_true', help="Run unit tests")
 parser.add_argument('--view-logs', action='store_true',help="View the log and traceback files")
 parser.add_argument('--list-questions', action='store_true', help="List all internal questions")
 parser.add_argument('--add', action='store_true',help="Add a new question and answer to the internal list")
@@ -445,6 +509,7 @@ parser.add_argument('--filetype', type=str,help="Specify the type of the file to
 parser.add_argument('--filepath', type=str,help="Specify the path to the file to import")
 parser.add_argument('--variants', type=str, help="Specify variants for the question, separated by semicolons")
 parser.add_argument('--tags', type=str, help="Specify tags for the question, separated by semicolons")
+
 
 args = parser.parse_args()
 
@@ -468,6 +533,8 @@ if args.import_file:
         print(f"Error: {error_message}")
         save_error_logs(error_message, traceback_info)
     exit()
+    
+
 
 if args.view_logs:
     read_logs()
@@ -612,39 +679,78 @@ if args.list_questions:  # تغییر از list-questions به list_questions
     for doc in docs:
         print(f"- {doc['question']}")
     exit()
-
-# Main program loop
-current_time = datetime.datetime.now().strftime("%H:%M:%S")
-print(f"{current_time} Hello! You can ask me questions. Type 'exit' to stop.")
-
-while True:
-    current_time = datetime.datetime.now().strftime("%H:%M:%S")
-    user_input = input(f"{current_time} You: ").strip().lower()
     
-    # Handle empty or invalid inputs
-    if not user_input.strip():
-        print(f"{current_time} Chatbot: Please enter a valid question or command.")
-        continue  # Skip further processing and prompt the user again
 
-    if user_input == "bye":
-        print(f"{current_time} Chatbot: Goodbye! Have a great day!")
-        break  # Exit the program when "bye" is typed
+class TestChatbot(unittest.TestCase):
+    def test_chatbot_response(self):
+        # تست جستجوی پاسخ
+        add_answer("what is question?", "This is a question.")  # اضافه کردن سوال و پاسخ
+        response = chatbot_response("what is question?")  # جستجوی سوال
+        self.assertEqual(response, "This is a question.")  # بررسی پاسخ
+
+    def test_add_answer(self):
+        # تست اضافه کردن پاسخ
+        add_answer("what is question?", "This is a question.")  # اضافه کردن سوال و پاسخ
+        response = chatbot_response("what is question?")  # جستجوی سوال
+        self.assertEqual(response, "This is a question.")  # بررسی پاسخ
+
+    def test_remove_answer(self):
+        # تست حذف پاسخ
+        add_answer("what is question?", "This is a question.")  # اضافه کردن سوال و پاسخ
+        remove_answer("what is question?", "This is a question.")  # حذف پاسخ
+        response = chatbot_response("what is question?")  # جستجوی سوال
+        self.assertNotEqual(response, "This is a question.")  # بررسی عدم وجود پاسخ
+
+    def test_import_csv(self):
+        # تست وارد کردن فایل CSV
+        try:
+            import_csv_to_mongo("questionPair.csv")  # وارد کردن فایل CSV
+            self.assertTrue(True)  # اگر خطایی ندهد، تست موفق است
+        except Exception as e:
+            self.fail(f"Importing CSV failed with error: {e}")
+
+if __name__ == '__main__':
     
-    elif user_input in ["hello", "hi"]:
-        print(f"{current_time} Chatbot: Hello! How can I assist you today?")
-        continue  # Skip further processing for "hi" or "hello"
-
-    # If the input contains compound questions...
-    if "?" in user_input and ("and" in user_input or "or" in user_input):
-        response = handle_compound_question(user_input)
-        print(f"{current_time} Chatbot:\n{response}")
+    if args.help:
+        print_help()
+        exit(0)
+    
+    if args.log_mode:
+        setup_logging(args.log_level)
+        logging.info("Logging mode is enabled with level: %s", args.log_level)
+        
+    # اگر آرگومان --test وجود داشت، تست‌ها را اجرا کن
+    if '--test' in sys.argv:
+        unittest.main(argv=[''], exit=False)
     else:
-        if is_single_word(user_input):
-            # If the input is a single word
-            questions = display_questions_by_tag(user_input)
-            if questions:
-                get_answer_by_selection(questions)
-        else:
-            # In other cases, use normal question-answer logic
-            response = chatbot_response(user_input)
-            print(f"{current_time} Chatbot: {response}")
+        # در غیر این صورت، برنامه اصلی را اجرا کن
+        current_time = datetime.datetime.now().strftime("%H:%M:%S")
+        print(f"{current_time} Hello! You can ask me questions. Type 'exit' to stop.")
+
+        while True:
+            current_time = datetime.datetime.now().strftime("%H:%M:%S")
+            user_input = input(f"{current_time} You: ").strip().lower()
+            
+            if not user_input.strip():
+                print(f"{current_time} Chatbot: Please enter a valid question or command.")
+                continue
+
+            if user_input == "exit":
+                print(f"{current_time} Chatbot: Goodbye! Have a great day!")
+                break
+            
+            elif user_input in ["hello", "hi"]:
+                print(f"{current_time} Chatbot: Hello! How can I assist you today?")
+                continue
+
+            if "?" in user_input and ("and" in user_input or "or" in user_input):
+                response = handle_compound_question(user_input)
+                print(f"{current_time} Chatbot:\n{response}")
+            else:
+                if is_single_word(user_input):
+                    questions = display_questions_by_tag(user_input)
+                    if questions:
+                        get_answer_by_selection(questions)
+                else:
+                    response = chatbot_response(user_input)
+                    print(f"{current_time} Chatbot: {response}")
