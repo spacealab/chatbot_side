@@ -5,49 +5,68 @@ import csv
 import argparse
 import os
 import traceback
-from pymongo import MongoClient
-import unittest
-import sys 
+import chardet
 import logging
+import unittest
+import requests  # برای ارتباط با API
+import time
+from sense_hat import SenseHat
 
+sense = SenseHat()
 
-client = MongoClient("mongodb://localhost:27017/")
-db = client["chatbot_db"]
-collection = db["questions_answers"]
+# نماد شروع برنامه
+start_symbol = [
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0],
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0],
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0],
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0],
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0],
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0],
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0],
+    [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0], [255, 0, 0]
+]
+
+# نماد شروع بازی
+game_start_symbol = [
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0],
+    [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0], [0, 255, 0]
+]
+
+# نماد خروج از بازی
+game_exit_symbol = [
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255],
+    [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255], [0, 0, 255]
+]
+
 
 csv_file_path = "questionPair.csv"
 
-def print_help():
-    help_text = """
-ChatBot Command Line Tool
+if not os.path.exists(csv_file_path):
+    with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.writer(file)
+        writer.writerow(
+            ["Question", "Answer1", "Answer2", "Answer3", "Answer4"])
+    print(f"File '{csv_file_path}' created successfully.")
 
-Usage:
-  python3 chatbot.py [OPTIONS]
 
-Options:
-  --help                Show this help message and exit.
-  --log-mode            Enable logging mode.
-  --log-level LEVEL     Set the logging level (INFO or WARNING). Default is WARNING.
-  --import-file         Import questions and answers from a CSV file.
-  --filetype TYPE       Specify the type of the file to import (e.g., CSV).
-  --filepath PATH       Specify the path to the file to import.
-  --add                 Add a new question and answer to the internal list.
-  --question QUESTION   Specify the question to add or remove or ask the chatbot.
-  --answer ANSWER       Specify the answer when adding a question.
-  --remove              Remove a question from the internal list.
-  --remove-answer ANSWER  Specify the answer to remove from the question.
-  --remove-tag TAG      Specify the tag to remove from the question.
-  --remove-variant VARIANT  Specify the variant to remove from the question.
-  --list-questions      List all internal questions.
-  --view-logs           View the log and traceback files.
-  --test                Run unit tests.
+def detect_file_encoding(file_path):
+    """تشخیص کدگذاری فایل CSV"""
+    with open(file_path, 'rb') as file:
+        result = chardet.detect(file.read())
+        return result['encoding']
 
-Examples:
-  python3 chatbot.py --add --question "What is Python?" --answer "A programming language."
-  python3 chatbot.py --import-file --filetype csv --filepath questionPair.csv
-  python3 chatbot.py --log-mode --log-level INFO
-    """
-    print(help_text)
 
 def validate_csv_path(file_path):
     if not os.path.exists(file_path):
@@ -58,14 +77,124 @@ def validate_csv_path(file_path):
     if not file_path.endswith('.csv'):
         raise ValueError(f"The file '{file_path}' is not a CSV file.")
 
+# آب و هوا
+
+
+def get_weather(location, date=None):
+    """
+    Get weather information for a specific location.
+    """
+    try:
+        api_key = "27cc3b7d2b85a843b63296207b519ca7"  # کلید API شما
+        base_url = "http://api.openweathermap.org/data/2.5/weather"  # مسیر پایه API
+
+        # حذف فضای خالی و کاراکترهای اضافی از location
+        location = location.strip().replace("?", "")
+
+        if date:  # اگر تاریخ مشخص شده باشد (نسخه پیشرفته)
+            return "Historical forecasting requires the advanced version of the API."
+        else:  # دریافت آب‌وهوای فعلی
+            url = f"{base_url}?q={location}&appid={api_key}&units=metric"
+
+        response = requests.get(url)
+        response.raise_for_status()  # بررسی خطاهای HTTP
+        data = response.json()
+
+        weather_description = data["weather"][0]["description"]
+        temperature = data["main"]["temp"]
+        return f"Weather {location}: {weather_description} Temp {temperature} Degrees Celsius."
+    except Exception as e:
+        return f"Unable to receive weather information: {str(e)}"
+
+
+# def load_existing_questions(csv_file_path):
+#     if os.path.exists(csv_file_path):
+#         try:
+#             encoding = detect_file_encoding(csv_file_path)
+#             with open(csv_file_path, mode='r', encoding=encoding) as file:
+#                 reader = csv.DictReader(file)
+#                 if 'Question' not in reader.fieldnames or 'Answer1' not in reader.fieldnames:
+#                     raise ValueError(
+#                         "CSV format is invalid. Missing 'Question' or 'Answer' columns.")
+#                 for row in reader:
+#                     question = row['Question'].strip().lower()
+#                     answers = [row[col].strip() for col in [
+#                         'Answer1', 'Answer2', 'Answer3', 'Answer4'] if col in row and row[col].strip()]
+#                     qa_pairs[question] = answers
+#         except UnicodeDecodeError:
+#             print("Error: Unable to decode the file. Please check the file encoding.")
+#         except ValueError as ve:
+#             print(f"Error: {ve}")
+#         except Exception as e:
+#             print(
+#                 f"An unexpected error occurred while loading the CSV file: {e}")
+#             save_error_logs(str(e), traceback.format_exc())
+
+
 def save_error_logs(error_message, traceback_info):
     try:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         log_filename = f"log_{timestamp}.txt"
         traceback_filename = f"traceback_{timestamp}.txt"
+
+        # ذخیره پیغام خطا
+        with open(log_filename, "w", encoding="utf-8") as log_file:
+            log_file.write(f"Error: {error_message}\n")
+
+        # ذخیره Stack Trace
+        with open(traceback_filename, "w", encoding="utf-8") as tb_file:
+            tb_file.write(traceback_info)
+
+        print(f"Logs saved successfully to {log_filename} and {traceback_filename}.")
+    except Exception as log_error:
+        print(f"Failed to save logs: {log_error}")
+
+
+def load_existing_questions(csv_file_path):
+    if os.path.exists(csv_file_path):
+        try:
+            # تشخیص کدگذاری فایل
+            encoding = detect_file_encoding(csv_file_path)
+            # چاپ کدگذاری فایل برای اطلاعات بیشتر
+            print(f"Detected file encoding: {encoding}")
+
+            # باز کردن فایل با کدگذاری شناسایی‌شده
+            with open(csv_file_path, mode='r', encoding=encoding) as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    question = row['Question'].strip().lower()
+                    answers = [row[col].strip() for col in ['Answer1', 'Answer2', 'Answer3', 'Answer4']if col in row and row[col].strip()]
+                    qa_pairs[question] = answers
+                if len(qa_pairs) < 10:
+                    raise ValueError(
+                        "The CSV file must contain at least 10 questions for the Trivia game.")
+
+        except UnicodeDecodeError:
+            print("Error: Unable to decode the file. Please check the file encoding.")
+    else:
+        print(f"File '{csv_file_path}' does not exist. Starting with an empty list of questions.")
+
+
+def validate_csv_path(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"The file path '{file_path}' does not exist.")
+    if not os.access(file_path, os.R_OK):
+        raise PermissionError(
+            f"Insufficient access rights for the file '{file_path}'.")
+    if not file_path.endswith('.csv'):
+        raise ValueError(f"The file '{file_path}' is not a CSV file.")
+
+
+def save_error_logs(error_message, traceback_info):
+    try:
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_filename = f"log_{timestamp}.txt"
+        traceback_filename = f"traceback_{timestamp}.txt"
+
         # Save the error message
         with open(log_filename, "w", encoding="utf-8") as log_file:
             log_file.write(f"Error: {error_message}\n")
+
         # Save the traceback
         with open(traceback_filename, "w", encoding="utf-8") as tb_file:
             tb_file.write(traceback_info)
@@ -74,246 +203,363 @@ def save_error_logs(error_message, traceback_info):
     except Exception as log_error:
         print(f"Failed to save logs: {log_error}")
 
+
+# Define questions and answers
+qa_pairs = {}
+try:
+    validate_csv_path(csv_file_path)  # بررسی مسیر و نوع فایل
+    with open(csv_file_path, mode='r', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+        # بررسی وجود ستون‌های ضروری
+        if not reader.fieldnames or 'Question' not in reader.fieldnames:
+            raise ValueError(
+                "The CSV file format is unsupported or corrupted.")
+
+        # جایگزینی لیست داخلی
+        qa_pairs.clear()
+        for row in reader:
+            question = row['Question'].strip().lower()
+            answers = [row[col].strip() for col in ['Answer1', 'Answer2', 'Answer3', 'Answer4']if col in row and row[col].strip()]
+            if len(answers) > 4:
+                raise ValueError(
+                    f"Question '{question}' has more than 4 answers.")
+            qa_pairs[question] = answers
+
+        # بررسی تعداد سوالات
+        if len(qa_pairs) < 10:
+            raise ValueError(
+                "The CSV file must contain at least 10 questions.")
+
+    print(f"Successfully imported {len(qa_pairs)} questions and answers.")
+except FileNotFoundError as e:
+    print(f"File not found: {e}")
+    save_error_logs(str(e), traceback.format_exc())
+except PermissionError as e:
+    print(f"Permission error: {e}")
+    save_error_logs(str(e), traceback.format_exc())
+except ValueError as e:
+    print(f"Invalid CSV format: {e}")
+    save_error_logs(str(e), traceback.format_exc())
+except Exception as e:
+    print("An unexpected error occurred. Please check the log files for details.")
+    save_error_logs(str(e), traceback.format_exc())
+
+
+# Define keyword-related questions
+keyword_questions = {
+    "semester": [
+        "What is the start date of the semester?",
+        "How many semesters are there in a year?",
+        "Can I extend my semester duration?"
+    ],
+    "python": [
+        "What is Python?",
+        "How do I learn Python?",
+        "What are the main features of Python?"
+    ],
+    "ai": [
+        "What is ai?",
+        "What are the types of ai?",
+        "How does ai impact our daily lives?"
+    ]
+}
+
+# Define question variants
+question_variants = {
+    "Where is lecturing hall XXX?": [
+        "What is the location of lecturing hall XXX?",
+        "Where is lecturing hall XXX located?",
+        "How do I reach lecturing hall XXX?"
+    ],
+    "How do I learn Excel?": [
+        "What is the best way to learn Excel?",
+        "Can you tell me how to start learning Excel?"
+    ],
+    "What is language?": [
+        "Can you explain communication?",
+        "Tell me about intraction.",
+        "What does contact mean?"
+    ]
+}
+
 # Find the original question from variants
+
+
 def find_original_question(user_input):
-    # جستجو در سوال اصلی و تنوع‌ها
-    doc = collection.find_one({
-        "$or": [
-            {"question": user_input.strip().lower()},
-            {"variants": {"$in": [user_input.strip().lower()]}}
-        ]
-    })
-    return doc
+    for original, variants in question_variants.items():
+        if user_input.strip().lower() == original.strip().lower():
+            return original
+        for variant in variants:
+            if user_input.strip().lower() == variant.strip().lower():
+                return original
+    return None
 
 # Show suggestions based on keywords
+
+
 def show_suggestions(keyword):
-    docs = collection.find({"tags": keyword})
-    questions = [doc["question"] for doc in docs]
-    if questions:
+    if keyword in keyword_questions:
         print("Here are some related questions:")
-        for i, question in enumerate(questions, 1):
+        for i, question in enumerate(keyword_questions[keyword], 1):
             print(f"{i}. {question}")
+
         choice = input("Select a question by typing its number: ")
         if choice.isdigit():
             choice = int(choice)
-            if 1 <= choice <= len(questions):
-                return questions[choice - 1]
-        return "Invalid choice. Please try again."
+            if 1 <= choice <= len(keyword_questions[keyword]):
+                selected_question = keyword_questions[keyword][choice - 1].strip(
+                ).lower()
+                # Fetch and return the response from qa_pairs
+                if selected_question in qa_pairs:
+                    # return chatbot_response(selected_question)
+                    return random.choice(qa_pairs[selected_question])
+                else:
+                    return "I'm sorry, I don't have an answer for that question."
+            else:
+                return "Invalid choice. Please try again."
+        else:
+            return "Invalid input. Please enter a number."
     else:
-        return f"No related questions found for keyword '{keyword}'."
+        return "No related question found for this keyword."
 
 # Respond to user questions
-def chatbot_response(user_input, answer=None, variants=None, tags=None):
-    try:
-        logging.info(f"Searching for answer to: {user_input}")
-        # جستجوی سؤال در پایگاه داده
-        doc = collection.find_one({
-            "$or": [
-                {"question": user_input.strip().lower()},
-                {"variants": {"$in": [user_input.strip().lower()]}}
-            ]
-        })
 
-        if not doc:
-            logging.warning(f"No document found for input: {user_input}")
-            print(f"Document not found for input: {user_input.strip().lower()}")
-            
-            # اضافه کردن سؤال جدید به پایگاه داده
-            new_doc = {
-                "question": user_input.strip().lower(),
-                "variants": [variant.strip().lower() for variant in (variants or [])],  # اضافه کردن variants
-                "answers": [answer.strip()] if answer else [],  # اضافه کردن پاسخ اگر وجود داشت
-                "tags": [tag.strip().lower() for tag in (tags or [])],  # اضافه کردن tags
-                "created_at": datetime.datetime.now()
-            }
-            collection.insert_one(new_doc)  # ذخیره سؤال در دیتابیس
 
-            if answer or variants or tags:
-                return f"This question was not in the database. I have added it with the provided details."
-            else:
-                return "This question was not in the database. I have added it for future use, but it currently has no details."
+# def chatbot_response(user_input):
+#     # لاگ کردن سوال کاربر
+#     logging.info(f"User asked: {user_input}")
 
-        # اگر سندی پیدا شد
-        if doc:
-            update_required = False  # پرچم برای آپدیت پایگاه داده
+#     # پیدا کردن سوال اصلی (اگر وجود دارد)
+#     original_question = find_original_question(user_input)
+#     if original_question:
+#         user_input = original_question
+#         logging.info(f"Original question found: {original_question}")
 
-            # اگر پاسخ جدید ارائه شده و قبلاً در لیست پاسخ‌ها وجود نداشته باشد
-            if answer and answer.strip() not in doc.get("answers", []):
-                doc["answers"].append(answer.strip())
-                update_required = True
+#     # بررسی وجود سوال در qa_pairs
+#     if user_input in qa_pairs:
+#         if isinstance(qa_pairs[user_input], list):
+#             response = random.choice(qa_pairs[user_input])
+#         else:
+#             response = qa_pairs[user_input]
 
-            # اگر variant جدید ارائه شده و قبلاً در لیست variants وجود نداشته باشد
-            if variants:
-                for variant in variants:
-                    if variant.strip().lower() not in doc.get("variants", []):
-                        doc["variants"].append(variant.strip().lower())
-                        update_required = True
+#         # لاگ کردن پاسخ چتبات
+#         logging.info(f"Chatbot responded: {response}")
+#         return response
 
-            # اگر tag جدید ارائه شده و قبلاً در لیست tags وجود نداشته باشد
-            if tags:
-                for tag in tags:
-                    if tag.strip().lower() not in doc.get("tags", []):
-                        doc["tags"].append(tag.strip().lower())
-                        update_required = True
 
-            # به‌روزرسانی سند در پایگاه داده در صورت نیاز
-            if update_required:
-                collection.update_one(
-                    {"_id": doc["_id"]},
-                    {"$set": {"answers": doc["answers"], "variants": doc["variants"], "tags": doc["tags"]}}
-                )
-                return f"The details have been updated for the existing question."
+def chatbot_response(user_input):
+    # لاگ کردن سوال کاربر
+    logging.info(f"User asked: {user_input}")
 
-            # اگر همه جزئیات موجود باشند
-            if doc["answers"]:
-                return random.choice(doc["answers"])
-            else:
-                return "I'm sorry, I don't have an answer for that right now. You can provide one to add."
+    # بررسی اینکه سوال درباره مکان است یا خیر
+    if "where is" in user_input.lower() or "location of" in user_input.lower():
+        location_match = re.search(
+            r"location of (.+)|where is (.+)", user_input, re.IGNORECASE)
+        if location_match:
+            location = location_match.group(1) or location_match.group(2)
+            weather_info = get_weather(location.strip())
+            return f"The location {location.strip()} is unavailable in the system. {weather_info}"
 
-        # شرط اضافی برای اطمینان
-        return "I'm sorry, I couldn't find an answer for your question. Please try asking something else."
+    # پیدا کردن سوال اصلی (اگر وجود دارد)
+    original_question = find_original_question(user_input)
+    if original_question:
+        user_input = original_question
+        logging.info(f"Original question found: {original_question}")
 
-    except Exception as e:
-        # ثبت خطا و نمایش پیام عمومی
-        error_message = str(e)
-        traceback_info = traceback.format_exc()
-        save_error_logs(error_message, traceback_info)
-        return "An unexpected error occurred. Please try again later."
+    # بررسی وجود سوال در qa_pairs
+    if user_input in qa_pairs:
+        if isinstance(qa_pairs[user_input], list):
+            response = random.choice(qa_pairs[user_input])
+        else:
+            response = qa_pairs[user_input]
 
+        # لاگ کردن پاسخ چت‌بات
+        logging.info(f"Chatbot responded: {response}")
+        return response
+
+        # اگر سوالی پیدا نشد
+        return "I'm sorry, I don't know the answer to that."
+
+    # پاسخ به سلام و احوال‌پرسی
+    elif "hello" in user_input.lower():
+        response = "Hello! How can I assist you today?"
+        logging.info(f"Chatbot responded: {response}")
+        return response
+
+    elif "how are you?" in user_input.lower():
+        response = "I'm here to help you! How can I assist you?"
+        logging.info(f"Chatbot responded: {response}")
+        return response
+
+    elif "bye" in user_input.lower():
+        response = "Goodbye! Have a great day!"
+        logging.info(f"Chatbot responded: {response}")
+        return response
+
+    # اگر پاسخ مناسبی پیدا نشد
+    else:
+        logging.warning(f"No answer found for: {user_input}")
+        return "I'm sorry, I don't know the answer to that."
 # Split compound questions
+
+# Game
+
+
+def start_trivia():
+    show_game_start_symbol()
+    """Starts the trivia game."""
+    print("Trivia game activated! Answer the following questions:")
+    score = 0
+    total_questions = 10
+    questions = random.sample(list(qa_pairs.keys()),min(total_questions, len(qa_pairs)))
+
+    for index, question in enumerate(questions, 1):
+        print(f"Q{index}: {question}")
+        options = qa_pairs[question]
+        for i, option in enumerate(options, 1):
+            print(f"{i}. {option}")
+
+        try:
+            user_answer = int(input("Choose the correct option (1-4): "))
+            # Assuming first option is correct
+            if options[user_answer - 1].lower() == options[0].lower():
+                print("Correct!")
+                score += 1
+            else:
+                print(f"Wrong! The correct answer is: {options[0]}")
+        except (ValueError, IndexError):
+            print(f"Invalid input. The correct answer is: {options[0]}")
+
+    print(f"Trivia game over! Your score: {score}/{total_questions}")
+    show_game_exit_symbol(score)
+
 def split_question(user_input):
-    # Remove initial greetings like "hi", "hello", or "hey"
-    user_input = re.sub(r'^(hi|hello|hey),?', '', user_input.strip(), flags=re.IGNORECASE)
-    
-    # Split the input into questions using keywords "and", "or", or question marks
+    user_input = re.sub(r'^(hi|hello|hey), ?', '',
+                        user_input.strip(), flags=re.IGNORECASE)
     questions = re.split(r'\?\s*(?:and|or)?\s*', user_input)
-    
-    # Remove empty questions from the list and add a question mark at the end of each question
     questions = [q.strip() + '?' for q in questions if q.strip()]
-    
     return questions
 
 # Handle compound questions
+
+
 def handle_compound_question(user_input):
-    # Split the input into individual questions
     questions = split_question(user_input)
-    
-    # If no valid questions are found
     if not questions:
         return "I couldn't identify any valid questions in your input."
-    
-    # Process each question and generate a response
     responses = []
     for question in questions:
-        if question.strip():  # Check that the question is not empty
-            question_response = chatbot_response(question.strip())
-            responses.append(f"Q: {question} A: {question_response}")
-    
-    # Combine responses into a single string
+        question_response = chatbot_response(question)
+        responses.append(f"Q: {question} A: {question_response}")
     return "\n".join(responses)
 
-def export_mongo_to_csv(csv_file_path):
-    import csv
-    
-    # Read all documents from the database
-    docs = collection.find()  # collection: questions_answers collection in MongoDB
 
-    # Determine the maximum number of answers in all documents
-    max_answers = 0
-    all_docs = list(docs)  # Convert Cursor to a list
-    for d in all_docs:
-        if "answers" in d and len(d["answers"]) > max_answers:
-            max_answers = len(d["answers"])
-    header = ["Question"] + [f"Answer{i+1}" for i in range(max_answers)]
-
+def save_to_csv(csv_file_path, qa_pairs):
     with open(csv_file_path, mode='w', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
+
+        # تعیین تعداد حداکثری ستون‌ها
+        max_answers = max(len(answers) for answers in qa_pairs.values())
+        header = ["Question"] + [f"Answer{i+1}" for i in range(max_answers)]
+
+        # نوشتن هدر
         writer.writerow(header)
-        for d in all_docs:
-            question = d["question"]
-            answers = d["answers"] if "answers" in d else []
-            # If the number of answers is less than max_answers, fill with empty values
+
+        # نوشتن سوالات و پاسخ‌ها
+        for question, answers in qa_pairs.items():
             while len(answers) < max_answers:
-                answers.append("")
-            row = [question] + answers
-            writer.writerow(row)
+                answers.append("")  # پر کردن ستون‌های خالی
+            writer.writerow([question] + answers)
 
-    print(f"Data successfully exported from MongoDB to {csv_file_path}.")
+    print(f"Data successfully saved to {csv_file_path}")
 
-def add_question(question, answers_list):
-    question_lower = question.strip().lower()
-    existing_doc = collection.find_one({"question": question_lower})
-    
-    if existing_doc:
-        # If the question exists, add the answers to the existing list
-        for answer in answers_list:
-            if answer not in existing_doc["answers"]:
-                existing_doc["answers"].append(answer)
-        
-        # Update the document in the database
-        collection.update_one(
-            {"_id": existing_doc["_id"]},
-            {"$set": {"answers": existing_doc["answers"]}}
-        )
-        print(f"Updated question '{question}' with new answers: {answers_list}")
+
+def handle_error(message):
+    """چاپ پیام خطا و خروج از برنامه"""
+    print(f"Error: {message}")
+    exit()
+
+
+def add_question(question, answer):
+    # Load existing questions from CSV
+    load_existing_questions(csv_file_path)
+
+    # استانداردسازی ورودی‌ها
+    question = question.strip().lower()
+    answer = answer.strip()
+
+    # بررسی اینکه سوال از قبل وجود دارد یا خیر
+    if question in qa_pairs:
+        if answer not in qa_pairs[question]:
+            qa_pairs[question].append(answer)  # افزودن پاسخ جدید به سوال موجود
+            print(f"Added answer '{answer}' to existing question: '{question}'")
+        else:
+            print(f"The answer '{answer}' already exists for question: '{question}'")
     else:
-        # If the question does not exist, add a new question and answers
-        doc = {
-            "question": question_lower,
-            "answers": answers_list
-        }
-        collection.insert_one(doc)
-        print(f"Added new question '{question}' with answers {answers_list} to MongoDB.")
+        qa_pairs[question] = [answer]  # ایجاد سوال جدید با پاسخ
+        print(f"Added new question: '{question}' with answer: '{answer}'")
+
+    # ذخیره به فایل CSV
+    save_to_csv(csv_file_path, qa_pairs)
+
+    # بررسی اینکه سوال از قبل وجود دارد یا خیر
+    if question in qa_pairs:
+        if answer not in qa_pairs[question]:
+            qa_pairs[question].append(answer)  # افزودن پاسخ جدید به سوال موجود
+            print(f"Added answer '{answer}' to existing question: '{question}'")
+        else:
+            print(f"The answer '{answer}' already exists for question: '{question}'")
+    else:
+        qa_pairs[question] = [answer]  # ایجاد سوال جدید با پاسخ
+        print(f"Added new question: '{question}' with answer: '{answer}'")
+
+    # ذخیره به فایل CSV
+    save_to_csv(csv_file_path, qa_pairs)
+
+
+def handle_error(message):
+    print(f"Error: {message}")
+    exit()
+
 
 def remove_question(question):
-    question_lower = question.strip().lower()
-    result = collection.delete_one({"question": question_lower})
-    if result.deleted_count > 0:
-        print(f"Removed question: '{question}' from MongoDB.")
-    else:
-        print(f"The question '{question}' does not exist in database.")
+    question = question.strip().lower()
 
-def add_answer(question, new_answer):
-    question_lower = question.strip().lower()
-    doc = collection.find_one({"question": question_lower})
-    if not doc:
-        # If the question does not exist, add a new question and answer
-        doc = {
-            "question": question_lower,
-            "answers": [new_answer],
-            "tags": []  # You can also add tags here if needed
-        }
-        collection.insert_one(doc)
-        print(f"Added new question '{question}' with answer '{new_answer}' to MongoDB.")
+    if question in qa_pairs:
+        del qa_pairs[question]
+        print(f"Removed question: '{question}'")
+        save_to_csv(csv_file_path, qa_pairs)
     else:
-        # If the question exists
-        if new_answer in doc["answers"]:
-            # If the answer already exists
-            print(f"The answer '{new_answer}' already exists for question '{question}'. No changes made.")
-        else:
-            # If the answer is new, add it
-            doc["answers"].append(new_answer)
-            collection.update_one(
-                {"_id": doc["_id"]},
-                {"$set": {"answers": doc["answers"]}}
-            )
-            print(f"Added new answer '{new_answer}' to existing question '{question}'.")
+        print(f"Error: The question '{question}' does not exist.")
 
-def remove_answer(question, answer):
-    question_lower = question.strip().lower()
-    doc = collection.find_one({"question": question_lower})
-    if not doc:
-        print(f"The question '{question}' does not exist in database.")
-    else:
-        if answer in doc["answers"]:
-            doc["answers"].remove(answer)
-            collection.update_one(
-                {"_id": doc["_id"]},
-                {"$set": {"answers": doc["answers"]}}
-            )
-            print(f"Removed answer '{answer}' from question '{question}'.")
+
+def add_answer(csv_file_path, question, answer):
+    question = question.lower().strip()
+    if question in qa_pairs:
+        if answer not in qa_pairs[question]:
+            qa_pairs[question].append(answer)
+            print(f"Added answer '{answer}' to question: '{question}'")
         else:
-            print(f"The answer '{answer}' does not exist for question '{question}'.")
+            print(f"The answer '{answer}' already exists for question: '{question}'")
+    else:
+        # If the question doesn't exist, create it with the new answer
+        qa_pairs[question] = [answer]
+        print(f"Added new question '{question}' with answer '{answer}'")
+    save_to_csv(csv_file_path, qa_pairs)
+
+
+def remove_answer(csv_file_path, question, answer):
+    question = question.lower().strip()
+    if question in qa_pairs:
+        if answer in qa_pairs[question]:
+            qa_pairs[question].remove(answer)
+            print(f"Removed answer '{answer}' from question: '{question}'")
+        else:
+            print(f"The answer '{answer}' does not exist for question: '{question}' ")
+    else:
+        print(f"The question '{question}' does not exist.")
+    save_to_csv(csv_file_path, qa_pairs)
+
 
 def read_logs():
     log_filename = "log.txt"
@@ -329,192 +575,85 @@ def read_logs():
         print(log_content)
         print("\nTraceback Content:")
         print(traceback_content)
-    #except FileNotFoundError:
-        #print("Log or traceback file not found.")
+    # except FileNotFoundError:
+        # print("Log or traceback file not found.")
     except FileNotFoundError as e:
         error_message = str(e)
         traceback_info = traceback.format_exc()
         print(f"Error: {error_message}")
         save_error_logs(error_message, traceback_info)
+        
+def show_start_symbol():
+    sense.set_pixels(start_symbol)
 
-def import_csv_to_mongo(csv_path):
-    logging.info(f"Importing data from CSV file: {csv_path}")
-    try:
-        with open(csv_path, mode='r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            
-            # بررسی تعداد سوالات در فایل CSV
-            rows = list(reader)
-            if len(rows) < 10:
-                logging.warning("The CSV file must contain at least 10 Q&A entries.")
-                raise ValueError("The CSV file must contain at least 10 Q&A entries.")
-            
-            for row in rows:
-                # 1) Extract fields from the CSV file
-                question_text = row['question'].strip().lower()
-                variants_str = row.get('variants', '').strip()  # New field for variants
-                answers_str = row.get('answers', '').strip()
-                tags_str = row.get('tags', '').strip()
-                created_at_value = row.get('created_at', '').strip()
+def show_game_start_symbol():
+    sense.set_pixels(game_start_symbol)
 
-                # 2) Convert answers to a list
-                answers_list = [ans.strip() for ans in answers_str.split(';') if ans.strip()]
-                
-                # بررسی تعداد پاسخ‌ها
-                if len(answers_list) > 4:
-                    logging.warning(f"Each question can have a maximum of 4 answers. Question: '{question_text}' has {len(answers_list)} answers.")
-                    raise ValueError(f"Each question can have a maximum of 4 answers. Question: '{question_text}' has {len(answers_list)} answers.")
-
-                # 3) Convert tags to a list
-                tags_list = [tag.strip() for tag in tags_str.split(';') if tag.strip()]
-
-                # 4) Convert variants to a list
-                variants_list = [variant.strip().lower() for variant in variants_str.split(';') if variant.strip()]
-
-                # 5) Handle created_at field
-                if not created_at_value:
-                    created_at_value = datetime.datetime.now()
-                else:
-                    try:
-                        created_at_value = datetime.datetime.strptime(created_at_value, "%Y-%m-%d %H:%M:%S")
-                    except ValueError:
-                        logging.warning(f"Invalid date format for question: '{question_text}'. Using current time.")
-                        created_at_value = datetime.datetime.now()
-
-                # 6) Check if the question already exists in the database
-                existing_doc = collection.find_one({"question": question_text})
-
-                if existing_doc:
-                    # Update the existing document
-                    existing_answers = set(existing_doc.get("answers", []))
-                    existing_tags = set(existing_doc.get("tags", []))
-                    existing_variants = set(existing_doc.get("variants", []))
-
-                    # Add new answers, tags, and variants
-                    updated_answers = list(existing_answers.union(answers_list))
-                    updated_tags = list(existing_tags.union(tags_list))
-                    updated_variants = list(existing_variants.union(variants_list))
-
-                    collection.update_one(
-                        {"_id": existing_doc["_id"]},
-                        {"$set": {
-                            "answers": updated_answers,
-                            "tags": updated_tags,
-                            "variants": updated_variants,
-                            "created_at": created_at_value
-                        }}
-                    )
-                    logging.info(f"Updated question: '{question_text}'")
-                else:
-                    # Insert a new document
-                    doc = {
-                        "question": question_text,
-                        "variants": variants_list,
-                        "answers": answers_list,
-                        "tags": tags_list,
-                        "created_at": created_at_value
-                    }
-                    collection.insert_one(doc)
-                    logging.info(f"Inserted new question: '{question_text}'")
-
-    except FileNotFoundError:
-        logging.error(f"CSV file not found: {csv_path}")
-        raise
-    except Exception as e:
-        logging.error(f"Error importing CSV: {e}")
-        raise
-
-def is_single_word(input_text):
-    # Check if the input is a single word
-    return len(input_text.strip().split()) == 1
-
-def find_questions_by_tag(tag):
-    # Search for all questions that include the specified tag
-    questions_with_tag = collection.find({"tags": tag})
-    return list(questions_with_tag)
-
-def display_questions_by_tag(tag):
-    questions = find_questions_by_tag(tag)
-    if not questions:
-        print(f"Sorry, I couldn't find any questions related to '{tag}'. Please try another word.")
-        return None
-
-    print(f"Questions with tag '{tag}':")
-    for i, question in enumerate(questions, start=1):
-        print(f"{i}. {question['question']}")
-
-    return questions
-def get_answer_by_selection(questions):
-    choice = input("Enter the number of the question you want the answer for: ").strip()
-    
-    if not choice.isdigit() or int(choice) < 1 or int(choice) > len(questions):
-        print("Invalid choice. Please try again.")
-        return None
-
-    selected_question = questions[int(choice) - 1]
-    print(f"Selected Question: {selected_question['question']}")
-    print(f"Answers: {', '.join(selected_question['answers'])}")
-    
-def remove_question(question):
-    question_lower = question.strip().lower()
-    result = collection.delete_one({"question": question_lower})
-    if result.deleted_count > 0:
-        print(f"Removed question: '{question}' from MongoDB.")
-    else:
-        print(f"The question '{question}' does not exist in database.")
-
-def remove_answer(question, answer):
-    question_lower = question.strip().lower()
-    doc = collection.find_one({"question": question_lower})
-    if not doc:
-        print(f"The question '{question}' does not exist in database.")
-    else:
-        if answer in doc["answers"]:
-            doc["answers"].remove(answer)
-            collection.update_one(
-                {"_id": doc["_id"]},
-                {"$set": {"answers": doc["answers"]}}
-            )
-            print(f"Removed answer '{answer}' from question '{question}'.")
-        else:
-            print(f"The answer '{answer}' does not exist for question '{question}'.")
-
-def setup_logging(log_level="WARNING"):
-    """
-    Configure logging based on the provided log level.
-    """
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        filename='chatbot.log',  # Save logs to a file
-        filemode='a'  # Append to the log file
-    )
-
-parser = argparse.ArgumentParser(description="ChatBot Command Line Tool", add_help=False)
-parser.add_argument('--help', action='store_true', help="Show help message and exit")
-parser.add_argument('--log-mode', action='store_true', help="Enable logging mode")
-parser.add_argument('--log-level', type=str, choices=['INFO', 'WARNING'], default='WARNING', help="Set the logging level (INFO or WARNING)")
-parser.add_argument('--test', action='store_true', help="Run unit tests")
-parser.add_argument('--view-logs', action='store_true',help="View the log and traceback files")
-parser.add_argument('--list-questions', action='store_true', help="List all internal questions")
-parser.add_argument('--add', action='store_true',help="Add a new question and answer to the internal list")
-parser.add_argument('--remove', action='store_true',help="Remove a question from the internal list")
-parser.add_argument('--remove-answer', type=str, help="Specify the answer to remove from the question")
-parser.add_argument('--remove-tag', type=str, help="Specify the tag to remove from the question")
-parser.add_argument('--remove-variant', type=str, help="Specify the variant to remove from the question")
-parser.add_argument('--question', type=str,help="Specify the question to add or remove or ask the chatbot")
-parser.add_argument('--answer', type=str,help="Specify the answer when adding a question")
-parser.add_argument('--import-file', action='store_true',help="Import questions and answers from a CSV file")
-parser.add_argument('--filetype', type=str,help="Specify the type of the file to import (e.g., CSV)")
-parser.add_argument('--filepath', type=str,help="Specify the path to the file to import")
-parser.add_argument('--variants', type=str, help="Specify variants for the question, separated by semicolons")
-parser.add_argument('--tags', type=str, help="Specify tags for the question, separated by semicolons")
+def show_game_exit_symbol(score):
+    sense.show_message(f"Score: {score}", scroll_speed=0.1)
+    sense.set_pixels(game_exit_symbol)
 
 
-args = parser.parse_args()
+parser = argparse.ArgumentParser(
+    description="ChatBot Command Line Tool: Manage questions and answers via CLI.",
+    epilog="Example usage: python chatbot.py --add --question 'What is AI?' --answer 'Artificial Intelligence'"
+)
+
+parser.add_argument('--debug', action='store_true',
+                    help="Enable debug mode for detailed output.")
+parser.add_argument('--view-logs', action='store_true',
+                    help="View the log and traceback files.")
+parser.add_argument('--list-questions', action='store_true',
+                    help="List all internal questions.")
+parser.add_argument('--log-mode', action='store_true',
+                    help="Enable logging mode to save logs to a file.")
+parser.add_argument('--log-level', type=str, choices=['INFO', 'WARNING'], default='WARNING',
+                    help="Set the logging level (INFO or WARNING). Default is WARNING.")
+parser.add_argument('--add', action='store_true',
+                    help="Add a new question and answer to the internal list.")
+parser.add_argument('--remove', action='store_true',
+                    help="Remove a question from the internal list.")
+parser.add_argument('--question', type=str,
+                    help="Specify the question to add or remove.")
+parser.add_argument('--answer', type=str,
+                    help="Specify the answer when adding a question.")
+parser.add_argument('--import-file', action='store_true',
+                    help="Import questions and answers from a CSV file.")
+parser.add_argument('--filetype', type=str,
+                    help="Specify the type of the file to import (e.g., CSV).")
+parser.add_argument('--filepath', type=str,
+                    help="Specify the path to the file to import.")
+parser.add_argument('--test', action='store_true', help="Run unit tests.")
+
+parser.add_argument('--monitor', action='store_true',
+                    help="Enable temperature monitoring.")
+
+
+# args = parser.parse_args()
+"""
+try:
+    args = parser.parse_args()
+except argparse.ArgumentError as e:
+    print(f"Error: {e}")
+    parser.print_help()
+    exit(1)
+"""
+try:
+    args = parser.parse_args()
+except SystemExit:
+    print("Invalid argument provided. Use '--help' to see the list of valid arguments.")
+    parser.print_help()
+    exit(1)
+
+if '--help' in vars(args):
+    parser.print_help()
+    exit(0)
+
+
+if args.debug:
+    print("Debug mode is enabled.")
 
 if args.import_file:
-    # Ensure that the file type is CSV
     if args.filetype.lower() != "csv":
         error_message = "Error: Only CSV filetype is supported."
         traceback_info = "Unsupported file type provided for import."
@@ -523,234 +662,383 @@ if args.import_file:
         exit()
 
     try:
-        validate_csv_path(args.filepath)  # Check the file path and access permissions
-        import_csv_to_mongo(args.filepath)
-        print("Successfully imported questions and answers to MongoDB from", args.filepath)
+        validate_csv_path(args.filepath)  # Check file path and access
+        with open(args.filepath, mode='r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
 
+            # Check for required columns
+            if not reader.fieldnames or 'Question' not in reader.fieldnames:
+                raise ValueError(
+                    "The CSV file format is unsupported or missing required columns.")
+
+            # Process the file
+            qa_pairs.clear()
+            for row in reader:
+                question = row['Question'].strip().lower()
+                answers = [row[col].strip() for col in [
+                    'Answer1', 'Answer2', 'Answer3', 'Answer4'] if col in row and row[col].strip()]
+                qa_pairs[question] = answers
+
+            print(f"Successfully imported {len(qa_pairs)} questions and answers from {args.filepath}.")
+
+    except FileNotFoundError as e:
+        error_message = str(e)
+        traceback_info = traceback.format_exc()
+        print(f"Error: {error_message}")
+        save_error_logs(error_message, traceback_info)
+    except PermissionError as e:
+        error_message = str(e)
+        traceback_info = traceback.format_exc()
+        print(f"Error: {error_message}")
+        save_error_logs(error_message, traceback_info)
+    except ValueError as e:
+        error_message = str(e)
+        traceback_info = traceback.format_exc()
+        print(f"Error: {error_message}")
+        save_error_logs(error_message, traceback_info)
+    except csv.Error as e:
+        error_message = "The CSV file is corrupted and cannot be processed."
+        traceback_info = traceback.format_exc()
+        print(f"Error: {error_message}")
+        save_error_logs(error_message, traceback_info)
     except Exception as e:
         error_message = str(e)
         traceback_info = traceback.format_exc()
         print(f"Error: {error_message}")
         save_error_logs(error_message, traceback_info)
     exit()
-    
 
 
 if args.view_logs:
     read_logs()
     exit()
-    
-if args.add and args.question:
-    question = args.question.strip().lower()
-    answer = args.answer.strip() if args.answer else None
-    variants = [v.strip() for v in args.variants.split(";")] if args.variants else None
-    tags = [t.strip() for t in args.tags.split(";")] if args.tags else None
 
-    response = chatbot_response(question, answer=answer, variants=variants, tags=tags)
-    print(f"Chatbot: {response}")
-    exit()
 
-if args.remove:
-    if args.question and args.answer:
-        # Remove a specific answer
-        remove_answer(args.question, args.answer)
-    elif args.question:
-        # Remove the entire question
-        remove_question(args.question)
+def e_logging(log_mode, log_level):
+    if log_mode:
+        logging.basicConfig(
+            filename='app.log',
+            level=logging.INFO if log_level == 'INFO' else logging.WARNING,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
     else:
-        print("Error: Please specify a question to remove.")
-    exit()
-
-if args.list_questions:  # تغییر از list-questions به list_questions
-    docs = collection.find({}, {"_id": 0, "question": 1})
-    print("List of all questions:")
-    for doc in docs:
-        print(f"- {doc['question']}")
-    exit()
+        # غیرفعال کردن لاگ‌گیری اگر log-mode فعال نباشد
+        logging.disable(logging.CRITICAL)
 
 
-if args.view_logs:
-    read_logs()
-    exit()
-    
-if args.question:
-    response = chatbot_response(args.question)
-    print(f"Chatbot: {response}")
-    exit()
+def add_answer(csv_file_path, question, answer):
+    load_existing_questions(csv_file_path)
+    question = question.lower().strip()
+    answer = answer.strip()
+    if question in qa_pairs:
+        if answer not in qa_pairs[question]:
+            qa_pairs[question].append(answer)
+            print(f"Added answer '{answer}' to question: '{question}'")
+        else:
+            print(f"The answer '{answer}' already exists for question: '{question}'")
+    else:
+        qa_pairs[question] = [answer]
+        print(f"Added new question '{question}' with answer '{answer}'")
+    save_to_csv(csv_file_path, qa_pairs)
 
+# کد اصلی برنامه
+# def remove_answer(csv_file_path, question, answer):
+#     load_existing_questions(csv_file_path)
+#     question = question.lower().strip()
+#     answer = answer.strip()
+#     if question in qa_pairs:
+#         if answer in qa_pairs[question]:
+#             qa_pairs[question].remove(answer)
+#             print(f"Removed answer '{answer}' from question: '{question}'")
+#             if not qa_pairs[question]:
+#                 del qa_pairs[question]
+#                 print(f"Removed question '{question}' as it had no more answers.")
+#         else:
+#             print(f"The answer '{answer}' does not exist for question: '{question}'")
+#     else:
+#         print(f"The question '{question}' does not exist.")
+#     save_to_csv(csv_file_path, qa_pairs)
+
+# کد برنامه جانبی
+
+
+def remove_answer(csv_file_path, question, answer):
+    load_existing_questions(csv_file_path)
+    answer = answer.strip()
+
+    # اگر سوال مشخص نشده باشد، سوال مربوط به پاسخ را پیدا کن
+    if not question or question.strip() == "":
+        question_found = None
+        for q, answers in qa_pairs.items():
+            if answer in answers:
+                question_found = q
+                break
+
+        if not question_found:
+            print(
+                f"Error: No question found containing the answer '{answer}'.")
+            return
+        question = question_found
+
+    # حالا حذف پاسخ از سوال مشخص‌شده
+    question = question.lower().strip()
+    if question in qa_pairs:
+        if answer in qa_pairs[question]:
+            qa_pairs[question].remove(answer)
+            print(f"Removed answer '{answer}' from question: '{question}'")
+            if not qa_pairs[question]:  # اگر دیگر جوابی نمانده، سوال را نیز حذف کن
+                del qa_pairs[question]
+                print(f"Removed question '{question}' as it had no more answers.")
+        else:
+            print(f"Error: The answer '{answer}' does not exist for question: '{question}'")
+    else:
+        print(f"Error: The question '{question}' does not exist.")
+
+    save_to_csv(csv_file_path, qa_pairs)
+
+
+"""
 if args.add:
     if args.question and args.answer:
         question = args.question.strip().lower()
         answer = args.answer.strip()
 
-        # Check if the question exists
-        existing_doc = collection.find_one({"question": question})
-        if existing_doc:
-            # If the question exists, add the answer
-            if answer not in existing_doc["answers"]:
-                existing_doc["answers"].append(answer)
-                collection.update_one(
-                    {"_id": existing_doc["_id"]},
-                    {"$set": {"answers": existing_doc["answers"]}}
-                )
-                print(f"Added new answer '{answer}' to existing question: '{question}'")
+        # افزودن یا به‌روزرسانی سوال
+        if question in qa_pairs:
+            if answer not in qa_pairs[question]:
+                qa_pairs[question].append(answer)
+                print(f"Added answer '{answer}' to existing question: '{question}'")
             else:
                 print(f"The answer '{answer}' already exists for question: '{question}'")
         else:
-            # If the question does not exist, add the new question and answer
-            doc = {"question": question, "answers": [answer], "tags": []}
-            collection.insert_one(doc)
+            qa_pairs[question] = [answer]
             print(f"Added new question: '{question}' with answer: '{answer}'")
+
+        # ذخیره تغییرات
+        save_to_csv(csv_file_path, qa_pairs)
     else:
         print("Error: Both --question and --answer must be specified when using --add.")
     exit()
 
-if args.remove:
-    if args.question and args.answer:
-        # Remove a specific answer
-        remove_answer(args.question, args.answer)
-    elif args.question:
-        # Remove the entire question
-        remove_question(args.question)
+    # اضافه کردن سوال و پاسخ به لیست
+    if args.question in qa_pairs:
+        print(f"Question '{args.question}' already exists.")
     else:
-        print("Error: Please specify a question to remove.")
+        qa_pairs[args.question] = answers
+        print(f"Added question: '{args.question}' with answer: '{args.answer}'")
+
+    save_to_csv('questionPair.csv', qa_pairs)
+
+    # توقف برنامه
     exit()
 
-def remove_question(question):
-    question_lower = question.strip().lower()
-    result = collection.delete_one({"question": question_lower})
-    if result.deleted_count > 0:
-        print(f"Removed question: '{question}' from MongoDB.")
+if args.remove:
+    if args.question:
+        question = args.question.strip().lower()
+
+        # حذف سوال
+        if question in qa_pairs:
+            del qa_pairs[question]
+            print(f"Removed question: '{question}'")
+            save_to_csv(csv_file_path, qa_pairs)
+        else:
+            print(f"Error: The question '{question}' does not exist.")
     else:
-        print(f"The question '{question}' does not exist in database.")
+        print("Error: --question must be specified when using --remove.")
+    exit()
+"""
+
+if args.add:
+    if args.question and args.answer:
+        add_question(args.question, args.answer)
+    else:
+        print("Error: Both --question and --answer must be specified when using --add.")
+    exit()
+
+# کد اصلی برنامه
+# if args.remove:
+#     if args.question:
+#         remove_question(args.question)
+#     else:
+#         handle_error("--question must be specified when using --remove.")
+#     exit()
+
+
+if args.list_questions:
+    print("Listing all internal questions:\n")
+
+    # From qa_pairs
+    print("Questions from CSV:")
+    for question in qa_pairs.keys():
+        print(f"- {question}")
+
+    # From keyword_questions
+    print("\nKeyword-based questions:")
+    for keyword, questions in keyword_questions.items():
+        print(f"\nKeyword: {keyword}")
+        for question in questions:
+            print(f"  - {question}")
 
     # Exit the program after printing questions
     exit()
-    
-if args.add and args.question and args.answer:
-    add_answer(args.question, args.answer)
-    exit()
-    
-if args.remove and args.question:
-    question = args.question.strip().lower()
+if args.add:
+    if args.question and args.answer:
+        add_answer(csv_file_path, args.question, args.answer)
+    else:
+        handle_error(
+            "Both --question and --answer must be specified when using --add.")
+# کد اصلی
+# if args.remove:
+#     if args.question and args.answer:
+#         remove_answer(csv_file_path, args.question, args.answer)
+#     else:
+#         handle_error("Both --question and --answer must be specified when using --remove.")
 
-    if args.remove_answer:
-        answer_to_remove = args.remove_answer.strip()
-        doc = collection.find_one({"question": question})
-        if doc and answer_to_remove in doc.get("answers", []):
-            doc["answers"].remove(answer_to_remove)
-            collection.update_one({"_id": doc["_id"]}, {"$set": {"answers": doc["answers"]}})
-            print(f"Removed answer '{answer_to_remove}' from question '{question}'.")
-        else:
-            print(f"Answer '{answer_to_remove}' not found for question '{question}'.")
+# کد برنامه جانبی
+if args.remove:
+    if args.answer:  # فقط بررسی می‌کند که پاسخ مشخص شده باشد
+        # اگر سوال مشخص نشده باشد، مقدار خالی ارسال کن
+        question = args.question if args.question else ""
+        remove_answer(csv_file_path, question, args.answer)
+    else:
+        handle_error("--answer must be specified when using --remove.")
 
-    if args.remove_tag:
-        tag_to_remove = args.remove_tag.strip().lower()
-        doc = collection.find_one({"question": question})
-        if doc and tag_to_remove in doc.get("tags", []):
-            doc["tags"].remove(tag_to_remove)
-            collection.update_one({"_id": doc["_id"]}, {"$set": {"tags": doc["tags"]}})
-            print(f"Removed tag '{tag_to_remove}' from question '{question}'.")
-        else:
-            print(f"Tag '{tag_to_remove}' not found for question '{question}'.")
-
-    if args.remove_variant:
-        variant_to_remove = args.remove_variant.strip().lower()
-        doc = collection.find_one({"question": question})
-        if doc and variant_to_remove in doc.get("variants", []):
-            doc["variants"].remove(variant_to_remove)
-            collection.update_one({"_id": doc["_id"]}, {"$set": {"variants": doc["variants"]}})
-            print(f"Removed variant '{variant_to_remove}' from question '{question}'.")
-        else:
-            print(f"Variant '{variant_to_remove}' not found for question '{question}'.")
-
-    # اگر هیچکدام از شرایط بالا فعال نبود، کل سؤال حذف می‌شود
-    if not args.remove_answer and not args.remove_tag and not args.remove_variant:
-        result = collection.delete_one({"question": question})
-        if result.deleted_count > 0:
-            print(f"Removed question: '{question}' from MongoDB.")
-        else:
-            print(f"The question '{question}' does not exist in database.")
-    exit()
-    
-if args.list_questions:  # تغییر از list-questions به list_questions
-    docs = collection.find({}, {"_id": 0, "question": 1})
-    print("List of all questions:")
-    for doc in docs:
-        print(f"- {doc['question']}")
-    exit()
-    
 
 class TestChatbot(unittest.TestCase):
-    def test_chatbot_response(self):
-        # تست جستجوی پاسخ
-        add_answer("what is question?", "This is a question.")  # اضافه کردن سوال و پاسخ
-        response = chatbot_response("what is question?")  # جستجوی سوال
-        self.assertEqual(response, "This is a question.")  # بررسی پاسخ
 
-    def test_add_answer(self):
-        # تست اضافه کردن پاسخ
-        add_answer("what is question?", "This is a question.")  # اضافه کردن سوال و پاسخ
-        response = chatbot_response("what is question?")  # جستجوی سوال
-        self.assertEqual(response, "This is a question.")  # بررسی پاسخ
+    def setUp(self):
+        # ایجاد یک فایل CSV موقت برای تست
+        self.test_csv_file = "test_questionPair.csv"
+        with open(self.test_csv_file, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.writer(file)
+            writer.writerow(
+                ["Question", "Answer1", "Answer2", "Answer3", "Answer4"])
+            writer.writerow(
+                ["what is python?", "Python is a programming language.", "", "", ""])
 
-    def test_remove_answer(self):
-        # تست حذف پاسخ
-        add_answer("what is question?", "This is a question.")  # اضافه کردن سوال و پاسخ
-        remove_answer("what is question?", "This is a question.")  # حذف پاسخ
-        response = chatbot_response("what is question?")  # جستجوی سوال
-        self.assertNotEqual(response, "This is a question.")  # بررسی عدم وجود پاسخ
+    def tearDown(self):
+        # حذف فایل CSV موقت بعد از اتمام تست
+        if os.path.exists(self.test_csv_file):
+            os.remove(self.test_csv_file)
 
-    def test_import_csv(self):
-        # تست وارد کردن فایل CSV
-        try:
-            import_csv_to_mongo("questionPair.csv")  # وارد کردن فایل CSV
-            self.assertTrue(True)  # اگر خطایی ندهد، تست موفق است
-        except Exception as e:
-            self.fail(f"Importing CSV failed with error: {e}")
+    # def test_chatbot_response(self):
+    #     # تست پاسخ‌دهی چتبات
+    #     response = chatbot_response("What is Python?")
+    #     self.assertIn(response, ["Python is a programming language."])
+
+    def test_add_question(self):
+        # تست اضافه کردن سوال جدید
+        add_question("What is AI?", "AI stands for Artificial Intelligence.")
+        self.assertIn("what is ai?", qa_pairs)
+        self.assertIn("AI stands for Artificial Intelligence.",qa_pairs["what is ai?"])
+
+    def test_remove_question(self):
+        # تست حذف سوال
+        add_question("What is AI?", "AI stands for Artificial Intelligence.")
+        remove_question("What is AI?")
+        self.assertNotIn("what is ai?", qa_pairs)
+
+    def test_load_existing_questions(self):
+        # تست بارگذاری سوالات از فایل CSV
+        load_existing_questions(self.test_csv_file)
+        self.assertIn("what is python?", qa_pairs)
+        self.assertIn("Python is a programming language.",qa_pairs["what is python?"])
+
+
+temperature_data = {"local": [], "forecast": []}
+
+
+def record_temperature(sensor_temp, forecast_temp):
+    """
+    ثبت دمای محلی و پیش‌بینی‌شده
+    """
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    temperature_data["local"].append(
+        {"time": current_time, "temp": sensor_temp})
+    temperature_data["forecast"].append(
+        {"time": current_time, "temp": forecast_temp})
+
+    # نگه داشتن فقط 3 روز اخیر
+    three_days_ago = datetime.datetime.now() - datetime.timedelta(days=3)
+    temperature_data["local"] = [
+        entry for entry in temperature_data["local"]
+        if datetime.datetime.strptime(entry["time"], "%Y-%m-%d %H:%M:%S") > three_days_ago
+    ]
+    temperature_data["forecast"] = [
+        entry for entry in temperature_data["forecast"]
+        if datetime.datetime.strptime(entry["time"], "%Y-%m-%d %H:%M:%S") > three_days_ago
+    ]
+
+
+def calculate_temperature_changes():
+    """
+    محاسبه تغییرات دما برای 3 روز اخیر
+    """
+    local_changes = [
+        abs(temperature_data["local"][i]["temp"] -
+            temperature_data["local"][i-1]["temp"])
+        for i in range(1, len(temperature_data["local"]))
+    ]
+    forecast_changes = [
+        abs(temperature_data["forecast"][i]["temp"] -
+            temperature_data["forecast"][i-1]["temp"])
+        for i in range(1, len(temperature_data["forecast"]))
+    ]
+    return local_changes, forecast_changes
+
+
+def simulate_temperatures():
+    """
+    شبیه‌سازی دماهای حسگر و پیش‌بینی‌شده
+    """
+    sensor_temp = random.uniform(15.0, 30.0)
+    forecast_temp = random.uniform(15.0, 30.0)
+    return sensor_temp, forecast_temp
+
 
 if __name__ == '__main__':
-    
-    if args.help:
-        print_help()
-        exit(0)
-    
-    if args.log_mode:
-        setup_logging(args.log_level)
-        logging.info("Logging mode is enabled with level: %s", args.log_level)
-        
-    # اگر آرگومان --test وجود داشت، تست‌ها را اجرا کن
-    if '--test' in sys.argv:
-        unittest.main(argv=[''], exit=False)
-    else:
-        # در غیر این صورت، برنامه اصلی را اجرا کن
-        current_time = datetime.datetime.now().strftime("%H:%M:%S")
-        print(f"{current_time} Hello! You can ask me questions. Type 'exit' to stop.")
+    show_start_symbol()
+    e_logging(args.log_mode, args.log_level)
 
+
+if args.monitor:
+    print("Temperature monitoring started. Type 'stop' to terminate.")
+    try:
         while True:
-            current_time = datetime.datetime.now().strftime("%H:%M:%S")
-            user_input = input(f"{current_time} You: ").strip().lower()
-            
-            if not user_input.strip():
-                print(f"{current_time} Chatbot: Please enter a valid question or command.")
-                continue
+            # شبیه‌سازی دما یا داده‌های واقعی
+            sensor_temp, forecast_temp = simulate_temperatures()
+            record_temperature(sensor_temp, forecast_temp)
+            local_changes, forecast_changes = calculate_temperature_changes()
 
-            if user_input == "exit":
-                print(f"{current_time} Chatbot: Goodbye! Have a great day!")
+            # نمایش خروجی
+            print("Temperature changes (last 3 days):")
+            print(f"Local Sensor: {local_changes}")
+            print(f"Weather Forecast: {forecast_changes}")
+
+            # توقف با ورودی کاربر
+            user_input = input(
+                "Type 'stop' to terminate or press Enter to continue: ").strip().lower()
+            if user_input == "stop":
+                print("Monitoring stopped.")
                 break
-            
-            elif user_input in ["hello", "hi"]:
-                print(f"{current_time} Chatbot: Hello! How can I assist you today?")
+
+            time.sleep(5)  # هر 5 ثانیه برای تست (برای حالت واقعی: 1800 ثانیه)
+    except KeyboardInterrupt:
+        print("\nMonitoring interrupted by user.")
+else:
+    print("Hello! You can ask me questions. Type 'exit' to stop.")
+    while True:
+        try:
+            user_input = input("You: ").strip()
+            if user_input.lower() == "exit":
+                print("Goodbye!")
+                break
+            elif user_input.lower() == "trivia":
+                start_trivia()
                 continue
 
-            if "?" in user_input and ("and" in user_input or "or" in user_input):
-                response = handle_compound_question(user_input)
-                print(f"{current_time} Chatbot:\n{response}")
-            else:
-                if is_single_word(user_input):
-                    questions = display_questions_by_tag(user_input)
-                    if questions:
-                        get_answer_by_selection(questions)
-                else:
-                    response = chatbot_response(user_input)
-                    print(f"{current_time} Chatbot: {response}")
+            response = chatbot_response(user_input)
+            print(f"Chatbot: {response}")
+        except KeyboardInterrupt:
+            print("\nChatbot interaction stopped by user.")
+            break

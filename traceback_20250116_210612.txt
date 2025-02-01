@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/ali/Desktop/Digital Technologies/KURS/semester_One/Erstsemester-DT-Projekt/chatbot/chatbot_plus/chatbot.py", line 526, in <module>
+    validate_csv_path(args.filepath)  # Check the file path and access permissions
+  File "/home/ali/Desktop/Digital Technologies/KURS/semester_One/Erstsemester-DT-Projekt/chatbot/chatbot_plus/chatbot.py", line 54, in validate_csv_path
+    raise FileNotFoundError(f"The file path '{file_path}' does not exist.")
+FileNotFoundError: The file path 'invalid_path.csv' does not exist.

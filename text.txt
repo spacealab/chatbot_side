@@ -1,0 +1,72 @@
+Task17:
+
+python chatbot.py --add --question "What is Ali?" --answer "ali is good boy"
+
+python chatbot.py --remove --question "what is Ali?"
+
+==================================
+
+
+task 18 :
+
+python chatbot.py --add --question "Where is Hannover?" --answer "ali and saeid are good boys"
+
+python chatbot.py --add --question "What is Ali and saeid?" --answer "good boys in welt"
+
+این دستور پاسخ جدید را به سوال اضافه می‌کند یا اگر سوال موجود نباشد، آن را ایجاد می‌کند
+
+
+
+
+python chatbot.py --remove --question "QuestionA?" --answer "Answer4"
+این دوتا برای کد زیر برای وقتی که سوال را بدیم و جوابی که میخواییم را حذف کنیم 
+python chatbot.py --remove --question "What is Ali and saeid?" --answer "ali and saeid are good boys"
+python chatbot.py --remove  --question "What is Ali and saeid?" --answer "good boys in welt"
+این دو کد زیر برای وقتی است که ما فقط جواب را میدهیم و خودش به صورت خود کار حذفش مکیند و اگر سوال ما جوابی نداشته باشد خود جواب را هم حذف میکند
+python chatbot.py --remove --answer "good boys in welt"
+python chatbot.py --remove --answer "ali and saeid are good boys"
+
+این دستور پاسخ مشخص‌شده را حذف می‌کند و اگر هیچ پاسخی باقی نماند، سوال نیز حذف می‌شود. کد مر بوط به این خط از خط 483 تا 498
+
+
+
+
+
+python chatbot.py --list-questions         برای دیدن سوال های خودمان
+
+
+task 19 :
+
+python chatbot.py --import-file --filepath "invalid_path/questionPair.csv" --filetype "csv"
+python chatbot.py --import-file --filepath "/path/to/protected/file.csv" --filetype "csv"
+python chatbot.py --import-file --filepath "/path/to/invalid_format_file.csv" --filetype "csv"
+python chatbot.py --import-file --filepath "/path/to/valid_file.csv" --filetype "csv"
+
+
+
+task 20 :
+
+python3 chatbot.py --test
+
+21:
+python chatbot.py --log-mode
+
+
+22:
+python chatbot.py --help
+
+
+
+23:
+trivia
+
+25:
+pip install requests chardet
+python chatbot.py
+
+
+
+
+
+
+
